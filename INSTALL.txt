@@ -1,0 +1,32 @@
+FIELDOPS DISPATCH V8.6 — HOVER ONLY + TRUE SOLID TOOLTIP
+
+Fixes:
+- Removed click behavior from Daily Track activities and gaps.
+- Track segments are no longer buttons.
+- Hint appears only while the mouse is passing over an activity/gap.
+- Move mouse away and it disappears immediately.
+
+Transparency fix:
+- Hint is now rendered outside the track/table using a React portal.
+- This prevents rows, labels and lines from drawing over the hint.
+- Day mode popup uses solid WHITE.
+- Night mode popup uses solid SLATE-950.
+- z-index 99999.
+- No opacity/transparency is used.
+- Pointer arrow remains.
+
+Status colors remain:
+Complete = Green
+Travelling = Blue
+On Site = Blue
+Working = Orange
+Break/Lunch = Gray
+Assigned = Purple
+Available = Gray
+
+INSTALL
+1. Stop with Ctrl+C
+2. cd C:\Projects\fieldops
+3. Copy-Item .\app\page.tsx .\app\page.before-hover-only-v8-6.tsx -Force
+4. Extract ZIP over C:\Projects\fieldops
+5. npm run dev

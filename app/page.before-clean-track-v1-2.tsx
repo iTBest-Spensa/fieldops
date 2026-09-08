@@ -252,7 +252,6 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [assignmentModal, setAssignmentModal] = useState<AssignmentModal | null>(null);
   const [savingAssignment, setSavingAssignment] = useState(false);
-  const [boardCurrentTime, setBoardCurrentTime] = useState<Date | null>(null);
 
   const selectedJob =
     waitingJobs.find((job) => job.uuid === selectedJobUuid) ?? waitingJobs[0] ?? null;
@@ -277,15 +276,6 @@ export default function Home() {
 
   const selectedTech =
     techniciansWithFit.find((tech) => tech.uuid === selectedTechUuid) ?? null;
-
-  const boardNowHour = boardCurrentTime ? dateToDecimalHour(boardCurrentTime) : null;
-  const boardShowsNow =
-    boardCurrentTime !== null &&
-    selectedDate === formatDateInput(boardCurrentTime) &&
-    boardNowHour !== null &&
-    boardNowHour >= 8 &&
-    boardNowHour <= 17;
-  const boardNowRatio = boardNowHour === null ? 0 : (boardNowHour - 8) / 9;
 
   const loadBoard = useCallback(async () => {
     setError(null);
@@ -384,14 +374,6 @@ export default function Home() {
 
     setLoading(false);
   }, [selectedDate, supabase]);
-
-  useEffect(() => {
-    const updateBoardTime = () => setBoardCurrentTime(new Date());
-    updateBoardTime();
-
-    const timer = window.setInterval(updateBoardTime, 30000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     if (!selectedDate) {
@@ -720,7 +702,7 @@ export default function Home() {
                     <div>
                       <h2 className="font-bold">Technician tracks</h2>
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        Technician | Daily Track
+                        Technician | Status | Daily Track
                       </p>
                     </div>
 
@@ -737,13 +719,15 @@ export default function Home() {
                   </div>
 
                   <div className="overflow-x-auto">
-                    <div className="min-w-[1120px]">
-                      <div className="grid grid-cols-[250px_minmax(0,1fr)] border-b border-border bg-muted/40 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    <div className="min-w-[1140px]">
+                      <div className="grid grid-cols-[210px_120px_minmax(0,1fr)] border-b border-border bg-muted/40 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                         <div className="border-r border-border px-4 py-3">Technician</div>
+                        <div className="border-r border-border px-3 py-3">Status</div>
                         <div className="px-3 py-3">Daily Track</div>
                       </div>
 
-                      <div className="grid grid-cols-[250px_minmax(0,1fr)] border-b border-border bg-background/30">
+                      <div className="grid grid-cols-[210px_120px_minmax(0,1fr)] border-b border-border bg-background/30">
+                        <div className="border-r border-border" />
                         <div className="border-r border-border" />
                         <div className="grid grid-cols-10">
                           {hours.map((hour) => (
@@ -764,84 +748,68 @@ export default function Home() {
                           No active users currently have the Technician role.
                         </div>
                       ) : (
-                        <div className="relative">
-                          {boardShowsNow && (
-                            <div
-                              className="pointer-events-none absolute bottom-0 top-0 z-40 w-px bg-rose-500/70"
-                              style={{
-                                left: `calc(${boardNowRatio * 100}% + ${250 * (1 - boardNowRatio)}px)`,
+                        techniciansWithFit.map((tech) => (
+                          <div
+                            key={tech.uuid}
+                            className="grid grid-cols-[210px_120px_minmax(0,1fr)] border-b border-border last:border-b-0"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedTechUuid(tech.uuid);
+                                setScheduleView("today");
                               }}
+                              className="flex items-start gap-3 border-r border-border p-3 text-left hover:bg-row-hover"
                             >
-                              <div className="absolute -top-5 -translate-x-1/2 bg-rose-500 px-1.5 py-0.5 text-[8px] font-black text-white">
-                                NOW
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-avatar text-xs font-black">
+                                {tech.initials}
                               </div>
-                            </div>
-                          )}
-
-                          {techniciansWithFit.map((tech) => (
-                            <div
-                              key={tech.uuid}
-                              className="grid grid-cols-[250px_minmax(0,1fr)] border-b border-border last:border-b-0"
-                            >
-                              <div className="flex items-start gap-3 border-r border-border p-3">
-                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-avatar text-xs font-black">
-                                  {tech.initials}
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-sm font-bold">{tech.name}</div>
+                                <div className="mt-0.5 text-[11px] text-muted-foreground">
+                                  {tech.role}
                                 </div>
-                                <div className="min-w-0 flex-1">
-                                  <div className="truncate text-sm font-bold">{tech.name}</div>
-                                  <div className="mt-0.5 text-[11px] text-muted-foreground">
-                                    {tech.role}
-                                  </div>
-
-                                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                                {selectedJob && (
+                                  <div className="mt-1 flex items-center gap-2">
                                     <span
-                                      className={`border px-1.5 py-0.5 text-[8px] font-black rounded-none ${
-                                        tech.statusTone
+                                      className={`text-[10px] font-black ${
+                                        tech.rank === 1 ? "text-primary" : "text-muted-foreground"
                                       }`}
                                     >
-                                      {tech.status}
+                                      {tech.confidence}% fit
                                     </span>
-
-                                    {selectedJob && (
-                                      <>
-                                        <span
-                                          className={`text-[9px] font-black ${
-                                            tech.rank === 1 ? "text-primary" : "text-muted-foreground"
-                                          }`}
-                                        >
-                                          {tech.confidence}% fit
-                                        </span>
-                                        {tech.rank === 1 && (
-                                          <span className="border border-primary/30 px-1.5 py-0.5 text-[8px] font-black text-primary rounded-none">
-                                            BEST
-                                          </span>
-                                        )}
-                                      </>
+                                    {tech.rank === 1 && (
+                                      <span className="border border-primary/30 px-1.5 py-0.5 text-[8px] font-black text-primary rounded-none">
+                                        BEST
+                                      </span>
                                     )}
                                   </div>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setSelectedTechUuid(tech.uuid);
-                                      setScheduleView("today");
-                                    }}
-                                    className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold text-primary hover:underline"
-                                  >
-                                    View schedule
-                                    <ChevronRight className="h-3 w-3" />
-                                  </button>
+                                )}
+                                <div className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-primary">
+                                  View schedule
+                                  <ChevronRight className="h-3 w-3" />
                                 </div>
                               </div>
+                            </button>
 
-                              <SingleLineTimeline
-                                track={tech.track}
-                                technicianId={tech.uuid}
-                                onDropJob={handleDropJob}
-                              />
+                            <div className="flex items-start border-r border-border p-3">
+                              <div
+                                className={`w-full border px-2 py-2 text-center text-[10px] font-black rounded-none ${
+                                  tech.statusTone
+                                }`}
+                              >
+                                {tech.status}
+                              </div>
                             </div>
-                          ))}
-                        </div>
+
+                            <SingleLineTimeline
+                              track={tech.track}
+                              technicianId={tech.uuid}
+                              selectedDate={selectedDate}
+                              onDropJob={handleDropJob}
+                            />
+                          </div>
+                        ))
                       )}
                     </div>
                   </div>
@@ -853,71 +821,51 @@ export default function Home() {
       </div>
 
       {selectedTech && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <>
           <button
             aria-label="Close schedule"
             onClick={() => setSelectedTechUuid(null)}
-            className="absolute inset-0 bg-black/45"
+            className="fixed inset-0 z-40 bg-black/35"
           />
-
-          <section className="relative z-10 flex max-h-[82vh] w-full max-w-[760px] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl">
+          <aside className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[560px] flex-col border-l border-border bg-background shadow-2xl">
             <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-5">
-              <div className="min-w-0">
+              <div>
                 <div className="text-xs font-semibold text-primary">Technician Schedule</div>
-                <h2 className="mt-1 truncate text-xl font-bold">{selectedTech.name}</h2>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className="text-sm text-muted-foreground">{selectedTech.role}</span>
-                  <span
-                    className={`border px-2 py-1 text-[9px] font-black rounded-none ${
-                      selectedTech.statusTone
-                    }`}
-                  >
-                    {selectedTech.status}
-                  </span>
-                  {selectedJob && (
-                    <span className="border border-primary/25 bg-primary/[0.06] px-2 py-1 text-[9px] font-black text-primary rounded-none">
-                      {selectedTech.confidence}% FIT FOR {selectedJob.id}
-                    </span>
-                  )}
-                </div>
+                <h2 className="mt-1 text-xl font-bold">{selectedTech.name}</h2>
+                <div className="mt-1 text-sm text-muted-foreground">{selectedTech.role}</div>
               </div>
-
               <button
                 type="button"
                 onClick={() => setSelectedTechUuid(null)}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-muted"
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-muted"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setScheduleView("today")}
-                  className={`border px-4 py-2 text-sm font-bold rounded-none ${
-                    scheduleView === "today"
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border bg-card"
-                  }`}
-                >
-                  Today
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setScheduleView("week")}
-                  className={`border px-4 py-2 text-sm font-bold rounded-none ${
-                    scheduleView === "week"
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border bg-card"
-                  }`}
-                >
-                  Week
-                </button>
-              </div>
-
-              <div className="text-xs font-semibold text-muted-foreground">{selectedDate}</div>
+            <div className="flex gap-2 border-b border-border px-5 py-4">
+              <button
+                type="button"
+                onClick={() => setScheduleView("today")}
+                className={`border px-4 py-2 text-sm font-bold rounded-none ${
+                  scheduleView === "today"
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border bg-card"
+                }`}
+              >
+                Today
+              </button>
+              <button
+                type="button"
+                onClick={() => setScheduleView("week")}
+                className={`border px-4 py-2 text-sm font-bold rounded-none ${
+                  scheduleView === "week"
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border bg-card"
+                }`}
+              >
+                Week
+              </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-5">
@@ -927,8 +875,8 @@ export default function Home() {
                 <WeekSchedule week={selectedTech.week} selectedDate={selectedDate} />
               )}
             </div>
-          </section>
-        </div>
+          </aside>
+        </>
       )}
 
       {assignmentModal && (
@@ -1533,17 +1481,32 @@ function HoverHintPortal({ hint }: { hint: HoverHintData | null }) {
 function SingleLineTimeline({
   track,
   technicianId,
+  selectedDate,
   onDropJob,
 }: {
   track: Segment[];
   technicianId: string;
+  selectedDate: string;
   onDropJob: (jobUuid: string, techUuid: string, dropHour: number) => void;
 }) {
   const [hint, setHint] = useState<HoverHintData | null>(null);
   const [dragHour, setDragHour] = useState<number | null>(null);
+  const [currentTime, setCurrentTime] = useState<Date | null>(null);
+
+  useEffect(() => {
+    const updateCurrentTime = () => setCurrentTime(new Date());
+    updateCurrentTime();
+
+    const timer = window.setInterval(updateCurrentTime, 30000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const startHour = 8;
   const totalHours = 9;
+  const selectedIsToday =
+    currentTime !== null && selectedDate === formatDateInput(currentTime);
+  const nowHour = currentTime ? dateToDecimalHour(currentTime) : startHour;
+  const nowLeft = ((nowHour - startHour) / totalHours) * 100;
   const items = buildTrackItems(track);
 
   function openHint(
@@ -1600,6 +1563,17 @@ function SingleLineTimeline({
         ))}
       </div>
 
+      {selectedIsToday && nowHour >= 8 && nowHour <= 17 && (
+        <div
+          className="absolute bottom-2 top-2 z-20 w-px bg-rose-500/70"
+          style={{ left: `${nowLeft}%` }}
+        >
+          <div className="absolute -top-1 -translate-x-1/2 bg-rose-500 px-1 py-0.5 text-[8px] font-black text-white">
+            NOW
+          </div>
+        </div>
+      )}
+
       {dragHour !== null && (
         <div
           className="pointer-events-none absolute bottom-2 top-2 z-40 w-px bg-primary"
@@ -1645,8 +1619,8 @@ function SingleLineTimeline({
                 <span className="absolute left-0 top-[43px] h-[12px] w-[12px] -translate-x-1/2 rounded-full border-2 border-background bg-slate-500" />
                 <span className="absolute right-0 top-[43px] h-[12px] w-[12px] translate-x-1/2 rounded-full border-2 border-background bg-slate-500" />
 
-                <span className="absolute left-1/2 top-[60px] w-full -translate-x-1/2 overflow-hidden px-0.5 text-center text-[7px] font-black uppercase text-slate-500">
-                  <span className="block truncate">{durationLabel(item.start, item.end)} gap</span>
+                <span className="absolute left-1/2 top-[59px] -translate-x-1/2 whitespace-nowrap text-[8px] font-black uppercase text-slate-500">
+                  {durationLabel(item.start, item.end)} gap
                 </span>
               </div>
             );
@@ -1700,15 +1674,15 @@ function SingleLineTimeline({
               />
 
               <span
-                className={`absolute left-1/2 w-full -translate-x-1/2 overflow-hidden px-1 ${
+                className={`absolute left-0 max-w-[170px] ${
                   topLabel ? "bottom-[57px]" : "top-[58px]"
                 }`}
               >
-                <span className={`block truncate text-[8px] font-black uppercase ${colors.text}`}>
-                  {colors.label}
+                <span className={`block truncate text-[9px] font-black uppercase ${colors.text}`}>
+                  {colors.label} · {segment.id}
                 </span>
-                <span className="block truncate text-[9px] font-semibold">{segment.title}</span>
-                <span className="block truncate whitespace-nowrap text-[8px] text-muted-foreground">
+                <span className="block truncate text-[10px] font-semibold">{segment.title}</span>
+                <span className="block whitespace-nowrap text-[9px] text-muted-foreground">
                   {segment.time}
                 </span>
               </span>
