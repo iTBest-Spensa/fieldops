@@ -61,10 +61,7 @@ type Segment = {
   customer?: string;
   place?: string;
   priority?: string;
-  description?: string;
   notes?: string;
-  workOrderUuid?: string;
-  assignmentId?: string;
 };
 
 type ScheduleItem = {
@@ -78,7 +75,6 @@ type WaitingJob = {
   uuid: string;
   id: string;
   title: string;
-  description: string | null;
   customer: string;
   place: string;
   time: string;
@@ -106,22 +102,13 @@ type Technician = {
   week: Record<string, ScheduleItem[]>;
 };
 
-type DragJobPayload = {
-  kind: "waiting" | "assigned";
-  jobUuid: string;
-  sourceTechnicianUuid?: string;
-  assignmentId?: string;
-};
-
 type AssignmentModal = {
-  mode: "assign" | "move";
   job: WaitingJob;
   tech: Technician;
-  sourceTechnicianUuid?: string;
-  assignmentId?: string;
-  date: string;
-  startTime: string;
-  endTime: string;
+  startIso: string;
+  endIso: string;
+  startLabel: string;
+  endLabel: string;
 };
 
 type DbWorkOrder = {
@@ -210,13 +197,7 @@ type DbScheduleEvent = {
   notes: string | null;
 };
 
-const BOARD_START_HOUR = 6;
-const BOARD_END_HOUR = 22;
-const BOARD_TOTAL_HOURS = BOARD_END_HOUR - BOARD_START_HOUR;
-const boardHours = Array.from(
-  { length: BOARD_TOTAL_HOURS + 1 },
-  (_, index) => BOARD_START_HOUR + index
-);
+const hours = ["8 AM", "9 AM", "10 AM", "11 AM", "12 PM", "1 PM", "2 PM", "3 PM", "4 PM", "5 PM"];
 
 const statusColors: Record<ActivityStatus, { line: string; text: string; label: string }> = {
   complete: {
@@ -292,7 +273,6 @@ export default function Home() {
   const supabase = useMemo(() => createClient(), []);
   const [selectedDate, setSelectedDate] = useState("");
   const [waitingJobs, setWaitingJobs] = useState<WaitingJob[]>([]);
-  const [allJobs, setAllJobs] = useState<WaitingJob[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [selectedJobUuid, setSelectedJobUuid] = useState<string | null>(null);
   const [selectedTechUuid, setSelectedTechUuid] = useState<string | null>(null);
@@ -301,7 +281,6 @@ export default function Home() {
   const [authRequired, setAuthRequired] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [assignmentModal, setAssignmentModal] = useState<AssignmentModal | null>(null);
-  const [assignmentError, setAssignmentError] = useState<string | null>(null);
   const [savingAssignment, setSavingAssignment] = useState(false);
   const [boardCurrentTime, setBoardCurrentTime] = useState<Date | null>(null);
   const [customerOptions, setCustomerOptions] = useState<DbCustomer[]>([]);
@@ -341,36 +320,9 @@ export default function Home() {
     boardCurrentTime !== null &&
     selectedDate === formatDateInput(boardCurrentTime) &&
     boardNowHour !== null &&
-    boardNowHour >= BOARD_START_HOUR &&
-    boardNowHour <= BOARD_END_HOUR;
-  const boardNowRatio =
-    boardNowHour === null
-      ? 0
-      : (boardNowHour - BOARD_START_HOUR) / BOARD_TOTAL_HOURS;
-  const boardNowLabel = boardCurrentTime
-    ? boardCurrentTime.toLocaleTimeString([], {
-        hour: "numeric",
-        minute: "2-digit",
-        second: "2-digit",
-      })
-    : "";
-  const quickDates = boardCurrentTime
-    ? [0, 1, 2, 3].map((offset) => {
-        const date = new Date(boardCurrentTime);
-        date.setDate(date.getDate() + offset);
-        return {
-          value: formatDateInput(date),
-          label:
-            offset === 0
-              ? "Today"
-              : date.toLocaleDateString([], {
-                  weekday: "short",
-                  month: "short",
-                  day: "numeric",
-                }),
-        };
-      })
-    : [];
+    boardNowHour >= 8 &&
+    boardNowHour <= 17;
+  const boardNowRatio = boardNowHour === null ? 0 : (boardNowHour - 8) / 9;
 
   const loadBoard = useCallback(async () => {
     setError(null);
@@ -464,7 +416,6 @@ export default function Home() {
     });
 
     setWaitingJobs(built.waitingJobs);
-    setAllJobs(built.allJobs);
     setTechnicians(built.technicians);
 
     if (!selectedJobUuid || !built.waitingJobs.some((job) => job.uuid === selectedJobUuid)) {
@@ -478,7 +429,7 @@ export default function Home() {
     const updateBoardTime = () => setBoardCurrentTime(new Date());
     updateBoardTime();
 
-    // Browser Date is the actual local clock reported by the user's PC.
+    // Follow the browser/PC local clock continuously.
     const timer = window.setInterval(updateBoardTime, 1000);
     return () => window.clearInterval(timer);
   }, []);
@@ -646,230 +597,103 @@ export default function Home() {
   async function assignWork() {
     if (!assignmentModal) return;
 
-    setAssignmentError(null);
+    setSavingAssignment(true);
     setError(null);
 
-    const startHour = timeInputToDecimalHour(assignmentModal.startTime);
-    const endHour = timeInputToDecimalHour(assignmentModal.endTime);
-
-    if (!assignmentModal.date) {
-      setAssignmentError("Choose the assignment date.");
-      return;
-    }
-
-    if (startHour === null || endHour === null) {
-      setAssignmentError("Enter a valid start and end time.");
-      return;
-    }
-
-    // Overtime is allowed. Work is no longer restricted to 8 AM–5 PM.
-    if (endHour <= startHour) {
-      setAssignmentError("End time must be later than start time.");
-      return;
-    }
-
-    const targetTech = techniciansWithFit.find(
-      (item) => item.uuid === assignmentModal.tech.uuid
-    );
-
-    if (!targetTech) {
-      setAssignmentError("The selected technician is no longer available.");
-      return;
-    }
-
-    const start = dateAtHour(assignmentModal.date, startHour);
-    const end = dateAtHour(assignmentModal.date, endHour);
-    const startIso = start.toISOString();
-    const endIso = end.toISOString();
-
-    // Check the real database so future-day scheduling is checked too.
-    let assignmentConflictQuery = supabase
+    const { data: existing, error: existingError } = await supabase
       .from("work_order_assignments")
-      .select("id,work_order_id,scheduled_start,scheduled_end")
+      .select("id")
+      .eq("work_order_id", assignmentModal.job.uuid)
       .eq("technician_id", assignmentModal.tech.uuid)
-      .lt("scheduled_start", endIso)
-      .gt("scheduled_end", startIso);
+      .maybeSingle();
 
-    if (assignmentModal.assignmentId) {
-      assignmentConflictQuery = assignmentConflictQuery.neq(
-        "id",
-        assignmentModal.assignmentId
-      );
-    }
-
-    const [assignmentConflicts, eventConflicts] = await Promise.all([
-      assignmentConflictQuery,
-      supabase
-        .from("technician_schedule_events")
-        .select("id,title,event_type,starts_at,ends_at")
-        .eq("technician_id", assignmentModal.tech.uuid)
-        .lt("starts_at", endIso)
-        .gt("ends_at", startIso),
-    ]);
-
-    if (assignmentConflicts.error) {
-      setAssignmentError(assignmentConflicts.error.message);
-      return;
-    }
-
-    if (eventConflicts.error) {
-      setAssignmentError(eventConflicts.error.message);
-      return;
-    }
-
-    if ((assignmentConflicts.data?.length ?? 0) > 0 || (eventConflicts.data?.length ?? 0) > 0) {
-      const conflictName =
-        eventConflicts.data?.[0]?.title ??
-        ((assignmentConflicts.data?.length ?? 0) > 0
-          ? "another work order"
-          : "another activity");
-
-      setAssignmentError(
-        `That time conflicts with ${conflictName}. Choose another date or time.`
-      );
-      return;
-    }
-
-    setSavingAssignment(true);
-
-    let assignmentResult;
-
-    if (assignmentModal.mode === "move" && assignmentModal.assignmentId) {
-      assignmentResult = await supabase
-        .from("work_order_assignments")
-        .update({
-          technician_id: assignmentModal.tech.uuid,
-          scheduled_start: startIso,
-          scheduled_end: endIso,
-        })
-        .eq("id", assignmentModal.assignmentId);
-    } else {
-      const { data: existing, error: existingError } = await supabase
-        .from("work_order_assignments")
-        .select("id")
-        .eq("work_order_id", assignmentModal.job.uuid)
-        .eq("technician_id", assignmentModal.tech.uuid)
-        .maybeSingle();
-
-      if (existingError) {
-        setAssignmentError(existingError.message);
-        setSavingAssignment(false);
-        return;
-      }
-
-      const assignmentPayload = {
-        work_order_id: assignmentModal.job.uuid,
-        technician_id: assignmentModal.tech.uuid,
-        assignment_status: "assigned",
-        scheduled_start: startIso,
-        scheduled_end: endIso,
-      };
-
-      assignmentResult = existing?.id
-        ? await supabase
-            .from("work_order_assignments")
-            .update(assignmentPayload)
-            .eq("id", existing.id)
-        : await supabase.from("work_order_assignments").insert(assignmentPayload);
-    }
-
-    if (assignmentResult.error) {
-      setAssignmentError(assignmentResult.error.message);
+    if (existingError) {
+      setError(existingError.message);
       setSavingAssignment(false);
       return;
     }
 
-    const workOrderUpdate =
-      assignmentModal.mode === "move"
-        ? {
-            scheduled_start: startIso,
-            scheduled_end: endIso,
-          }
-        : {
-            status: "assigned",
-            scheduled_start: startIso,
-            scheduled_end: endIso,
-          };
+    const assignmentPayload = {
+      work_order_id: assignmentModal.job.uuid,
+      technician_id: assignmentModal.tech.uuid,
+      assignment_status: "assigned",
+      scheduled_start: assignmentModal.startIso,
+      scheduled_end: assignmentModal.endIso,
+    };
+
+    const assignmentResult = existing?.id
+      ? await supabase
+          .from("work_order_assignments")
+          .update(assignmentPayload)
+          .eq("id", existing.id)
+      : await supabase.from("work_order_assignments").insert(assignmentPayload);
+
+    if (assignmentResult.error) {
+      setError(assignmentResult.error.message);
+      setSavingAssignment(false);
+      return;
+    }
 
     const { error: workOrderError } = await supabase
       .from("work_orders")
-      .update(workOrderUpdate)
+      .update({
+        status: "assigned",
+        scheduled_start: assignmentModal.startIso,
+        scheduled_end: assignmentModal.endIso,
+      })
       .eq("id", assignmentModal.job.uuid);
 
     if (workOrderError) {
-      setAssignmentError(workOrderError.message);
+      setError(workOrderError.message);
       setSavingAssignment(false);
       return;
     }
 
-    const destinationDate = assignmentModal.date;
-
     setAssignmentModal(null);
-    setAssignmentError(null);
     setSavingAssignment(false);
-
-    if (destinationDate !== selectedDate) {
-      setSelectedDate(destinationDate);
-    } else {
-      await loadBoard();
-    }
+    await loadBoard();
   }
 
   function handleDropJob(
-    payload: DragJobPayload,
+    jobUuid: string,
     techUuid: string,
     dropHour: number
   ) {
-    const job =
-      waitingJobs.find((item) => item.uuid === payload.jobUuid) ??
-      allJobs.find((item) => item.uuid === payload.jobUuid);
-
+    const job = waitingJobs.find((item) => item.uuid === jobUuid);
     const tech = techniciansWithFit.find((item) => item.uuid === techUuid);
     if (!job || !tech) return;
-
-    setAssignmentError(null);
 
     const snappedHour = snapHour(dropHour, 15);
     const durationHours = Math.max(job.estimatedDurationMinutes, 15) / 60;
     const endHour = snappedHour + durationHours;
 
-    const hasConflict = tech.track.some((segment) => {
-      if (payload.assignmentId && segment.assignmentId === payload.assignmentId) {
-        return false;
-      }
+    if (endHour > 17) {
+      setError("That job would run past the 5:00 PM dispatch window.");
+      return;
+    }
 
-      return (
+    const hasConflict = tech.track.some(
+      (segment) =>
         segment.status !== "available" &&
         segment.id !== "OPEN" &&
         rangesOverlap(snappedHour, endHour, segment.start, segment.end)
-      );
-    });
+    );
 
     if (hasConflict) {
-      setAssignmentError(
-        "The dropped time overlaps another activity. Edit the date/start/end time before confirming."
-      );
-    } else {
-      setAssignmentError(null);
+      setError("That time conflicts with an existing activity for this technician.");
+      return;
     }
 
     const start = dateAtHour(selectedDate, snappedHour);
     const end = dateAtHour(selectedDate, endHour);
 
-    const modalTech = {
-      ...tech,
-      confidence: tech.confidenceByJob[job.uuid] ?? 0,
-    };
-
     setAssignmentModal({
-      mode: payload.kind === "assigned" ? "move" : "assign",
       job,
-      tech: modalTech,
-      sourceTechnicianUuid: payload.sourceTechnicianUuid,
-      assignmentId: payload.assignmentId,
-      date: selectedDate,
-      startTime: timeInputFromDate(start),
-      endTime: timeInputFromDate(end),
+      tech,
+      startIso: start.toISOString(),
+      endIso: end.toISOString(),
+      startLabel: formatLocalTime(start),
+      endLabel: formatLocalTime(end),
     });
   }
 
@@ -952,21 +776,6 @@ export default function Home() {
                 />
               </label>
 
-              {quickDates.map((date) => (
-                <button
-                  key={date.value}
-                  type="button"
-                  onClick={() => setSelectedDate(date.value)}
-                  className={`h-10 border px-3 text-xs font-bold ${
-                    selectedDate === date.value
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border bg-card text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {date.label}
-                </button>
-              ))}
-
               <button
                 type="button"
                 className="flex h-10 items-center gap-2 rounded-xl border border-border bg-card px-3 text-sm font-semibold"
@@ -1033,14 +842,6 @@ export default function Home() {
                             draggable
                             onDragStart={(event) => {
                               event.dataTransfer.effectAllowed = "move";
-                              const payload: DragJobPayload = {
-                                kind: "waiting",
-                                jobUuid: job.uuid,
-                              };
-                              event.dataTransfer.setData(
-                                "application/x-fieldops-job",
-                                JSON.stringify(payload)
-                              );
                               event.dataTransfer.setData("text/plain", job.uuid);
                             }}
                             onClick={() => setSelectedJobUuid(job.uuid)}
@@ -1105,31 +906,15 @@ export default function Home() {
 
                       <div className="grid grid-cols-[250px_minmax(0,1fr)] border-b border-border bg-background/30">
                         <div className="border-r border-border" />
-                        <div className="relative h-9">
-                          {boardHours.map((hour, index) => {
-                            const ratio =
-                              (hour - BOARD_START_HOUR) / BOARD_TOTAL_HOURS;
-                            const alignClass =
-                              index === 0
-                                ? "translate-x-0"
-                                : index === boardHours.length - 1
-                                ? "-translate-x-full"
-                                : "-translate-x-1/2";
-
-                            return (
-                              <div
-                                key={hour}
-                                className="absolute inset-y-0 border-l border-border/50"
-                                style={{ left: `${ratio * 100}%` }}
-                              >
-                                <span
-                                  className={`absolute top-1.5 whitespace-nowrap text-[9px] font-semibold text-muted-foreground ${alignClass}`}
-                                >
-                                  {formatHourHeader(hour)}
-                                </span>
-                              </div>
-                            );
-                          })}
+                        <div className="grid grid-cols-10">
+                          {hours.map((hour) => (
+                            <div
+                              key={hour}
+                              className="border-r border-border/50 px-1 py-2 text-center text-[10px] font-semibold text-muted-foreground last:border-r-0"
+                            >
+                              {hour}
+                            </div>
+                          ))}
                         </div>
                       </div>
 
@@ -1148,8 +933,8 @@ export default function Home() {
                                 left: `calc(${boardNowRatio * 100}% + ${250 * (1 - boardNowRatio)}px)`,
                               }}
                             >
-                              <div className="absolute -top-5 -translate-x-1/2 whitespace-nowrap bg-rose-500 px-1.5 py-0.5 text-[8px] font-black text-white">
-                                NOW · {boardNowLabel}
+                              <div className="absolute -top-5 -translate-x-1/2 bg-rose-500 px-1.5 py-0.5 text-[8px] font-black text-white">
+                                NOW
                               </div>
                             </div>
                           )}
@@ -1630,12 +1415,10 @@ export default function Home() {
 
       {assignmentModal && (
         <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-lg border border-border bg-background p-5 shadow-2xl">
+          <div className="w-full max-w-md border border-border bg-background p-5 shadow-2xl">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="text-xs font-semibold text-primary">
-                  {assignmentModal.mode === "move" ? "Move Work Order" : "Confirm Dispatch"}
-                </div>
+                <div className="text-xs font-semibold text-primary">Confirm Dispatch</div>
                 <h2 className="mt-1 text-lg font-bold">{assignmentModal.job.id}</h2>
                 <div className="mt-1 text-sm text-muted-foreground">
                   {assignmentModal.job.title}
@@ -1643,132 +1426,24 @@ export default function Home() {
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  setAssignmentModal(null);
-                  setAssignmentError(null);
-                }}
+                onClick={() => setAssignmentModal(null)}
                 className="flex h-9 w-9 items-center justify-center border border-border"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            {assignmentError && (
-              <div className="mt-4 border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-500">
-                {assignmentError}
-              </div>
-            )}
-
             <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
-              <Info
-                label={assignmentModal.mode === "move" ? "Move to" : "Technician"}
-                value={assignmentModal.tech.name}
-              />
-              <Info
-                label="Dispatch fit"
-                value={`${assignmentModal.tech.confidence}%`}
-              />
+              <Info label="Technician" value={assignmentModal.tech.name} />
+              <Info label="Dispatch fit" value={`${assignmentModal.tech.confidence}%`} />
+              <Info label="Start" value={assignmentModal.startLabel} />
+              <Info label="End" value={assignmentModal.endLabel} />
             </div>
-
-            <div className="mt-5 border border-border bg-muted/20 p-4">
-              <div className="text-xs font-bold">Assignment time</div>
-              <div className="mt-1 text-[11px] text-muted-foreground">
-                Dragging chooses the approximate slot. Change the day or exact time before confirming. Overtime after 5 PM is allowed.
-              </div>
-
-              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <label>
-                  <span className="mb-1.5 block text-[11px] font-bold">Date</span>
-                  <input
-                    type="date"
-                    value={assignmentModal.date}
-                    onChange={(event) =>
-                      setAssignmentModal((current) =>
-                        current
-                          ? {
-                              ...current,
-                              date: event.target.value,
-                            }
-                          : current
-                      )
-                    }
-                    className="h-11 w-full border border-border bg-card px-3 text-sm outline-none focus:border-primary"
-                  />
-                </label>
-
-                <label>
-                  <span className="mb-1.5 block text-[11px] font-bold">Start</span>
-                  <input
-                    type="time"
-                    step={900}
-                    value={assignmentModal.startTime}
-                    onChange={(event) =>
-                      setAssignmentModal((current) =>
-                        current
-                          ? {
-                              ...current,
-                              startTime: event.target.value,
-                            }
-                          : current
-                      )
-                    }
-                    className="h-11 w-full border border-border bg-card px-3 text-sm outline-none focus:border-primary"
-                  />
-                </label>
-
-                <label>
-                  <span className="mb-1.5 block text-[11px] font-bold">End</span>
-                  <input
-                    type="time"
-                    step={900}
-                    value={assignmentModal.endTime}
-                    onChange={(event) =>
-                      setAssignmentModal((current) =>
-                        current
-                          ? {
-                              ...current,
-                              endTime: event.target.value,
-                            }
-                          : current
-                      )
-                    }
-                    className="h-11 w-full border border-border bg-card px-3 text-sm outline-none focus:border-primary"
-                  />
-                </label>
-              </div>
-
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                <span>
-                  {assignmentModal.startTime && assignmentModal.endTime
-                    ? `${formatLongDate(assignmentModal.date)} · ${formatTimeInputLabel(
-                        assignmentModal.startTime
-                      )} – ${formatTimeInputLabel(assignmentModal.endTime)}`
-                    : "Enter a date, start and end time."}
-                </span>
-                <span className="font-semibold text-amber-600 dark:text-amber-400">
-                  Daily board: 6 AM–10 PM · overtime supported
-                </span>
-              </div>
-            </div>
-
-            {assignmentModal.job.description && (
-              <div className="mt-4 border-t border-border pt-4">
-                <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
-                  Job description
-                </div>
-                <div className="mt-1 text-sm leading-5">
-                  {assignmentModal.job.description}
-                </div>
-              </div>
-            )}
 
             <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  setAssignmentModal(null);
-                  setAssignmentError(null);
-                }}
+                onClick={() => setAssignmentModal(null)}
                 className="h-10 border border-border px-4 text-sm font-bold"
               >
                 Cancel
@@ -1779,13 +1454,7 @@ export default function Home() {
                 onClick={() => void assignWork()}
                 className="h-10 bg-primary px-4 text-sm font-bold text-primary-foreground disabled:opacity-60"
               >
-                {savingAssignment
-                  ? assignmentModal.mode === "move"
-                    ? "Moving…"
-                    : "Assigning…"
-                  : assignmentModal.mode === "move"
-                  ? "Confirm Move"
-                  : "Confirm Assignment"}
+                {savingAssignment ? "Assigning…" : "Confirm Assignment"}
               </button>
             </div>
           </div>
@@ -1831,59 +1500,49 @@ function buildLiveBoard(args: {
 
   const assignedWorkOrderIds = new Set(activeAssignments.map((assignment) => assignment.work_order_id));
 
-  const allJobs: WaitingJob[] = workOrders.map((workOrder) => {
-    const customer = customerMap.get(workOrder.customer_id);
-    const site = workOrder.site_id ? siteMap.get(workOrder.site_id) : null;
-    const start = workOrder.scheduled_start ? new Date(workOrder.scheduled_start) : null;
-
-    return {
-      uuid: workOrder.id,
-      id: workOrder.work_order_number,
-      title: workOrder.title,
-      description: workOrder.description,
-      customer: customer?.name ?? "Unknown customer",
-      place: workOrder.service_area ?? site?.city ?? site?.name ?? "No site",
-      time: start
-        ? formatLocalTime(start)
-        : ["emergency", "urgent"].includes(workOrder.priority)
-        ? "ASAP"
-        : "Unscheduled",
-      priority: capitalize(workOrder.priority),
-      tone: priorityTone[workOrder.priority] ?? priorityTone.normal,
-      scheduledStart: workOrder.scheduled_start,
-      scheduledEnd: workOrder.scheduled_end,
-      estimatedDurationMinutes: workOrder.estimated_duration_minutes ?? 60,
-      requiredSkills: workOrder.required_skills ?? [],
-      serviceArea: workOrder.service_area ?? site?.city ?? null,
-    };
-  });
-
-  const waitingJobs: WaitingJob[] = allJobs
-    .filter((job) => {
-      const workOrder = workOrderMap.get(job.uuid);
-      return (
-        workOrder !== undefined &&
+  const waitingJobs: WaitingJob[] = workOrders
+    .filter(
+      (workOrder) =>
         ["requested", "planned"].includes(workOrder.status) &&
         !assignedWorkOrderIds.has(workOrder.id)
-      );
-    })
+    )
     .sort((a, b) => {
       const priorityWeight: Record<string, number> = {
-        Emergency: 5,
-        Urgent: 4,
-        High: 3,
-        Normal: 2,
-        Low: 1,
+        emergency: 5,
+        urgent: 4,
+        high: 3,
+        normal: 2,
+        low: 1,
       };
-
-      const workOrderA = workOrderMap.get(a.uuid);
-      const workOrderB = workOrderMap.get(b.uuid);
-
       return (
         (priorityWeight[b.priority] ?? 0) - (priorityWeight[a.priority] ?? 0) ||
-        new Date(workOrderA?.requested_at ?? 0).getTime() -
-          new Date(workOrderB?.requested_at ?? 0).getTime()
+        new Date(a.requested_at).getTime() - new Date(b.requested_at).getTime()
       );
+    })
+    .map((workOrder) => {
+      const customer = customerMap.get(workOrder.customer_id);
+      const site = workOrder.site_id ? siteMap.get(workOrder.site_id) : null;
+      const start = workOrder.scheduled_start ? new Date(workOrder.scheduled_start) : null;
+
+      return {
+        uuid: workOrder.id,
+        id: workOrder.work_order_number,
+        title: workOrder.title,
+        customer: customer?.name ?? "Unknown customer",
+        place: workOrder.service_area ?? site?.city ?? site?.name ?? "No site",
+        time: start
+          ? formatLocalTime(start)
+          : ["emergency", "urgent"].includes(workOrder.priority)
+          ? "ASAP"
+          : "Unscheduled",
+        priority: capitalize(workOrder.priority),
+        tone: priorityTone[workOrder.priority] ?? priorityTone.normal,
+        scheduledStart: workOrder.scheduled_start,
+        scheduledEnd: workOrder.scheduled_end,
+        estimatedDurationMinutes: workOrder.estimated_duration_minutes ?? 60,
+        requiredSkills: workOrder.required_skills ?? [],
+        serviceArea: workOrder.service_area ?? site?.city ?? null,
+      };
     });
 
 
@@ -1925,7 +1584,7 @@ function buildLiveBoard(args: {
 
       const status = deriveTechnicianStatus(selectedDate, dayTrack);
       const confidenceByJob = Object.fromEntries(
-        allJobs.map((job) => [
+        waitingJobs.map((job) => [
           job.uuid,
           computeDispatchFit({
             job,
@@ -1954,7 +1613,7 @@ function buildLiveBoard(args: {
       };
     });
 
-  return { waitingJobs, allJobs, technicians: provisional };
+  return { waitingJobs, technicians: provisional };
 }
 
 function buildTrackForDate(args: {
@@ -1999,9 +1658,7 @@ function buildTrackForDate(args: {
       customer: customer?.name,
       place: workOrder.service_area ?? site?.city ?? site?.name ?? undefined,
       priority: capitalize(workOrder.priority),
-      description: workOrder.description ?? undefined,
-      workOrderUuid: workOrder.id,
-      assignmentId: assignment.id,
+      notes: workOrder.description ?? undefined,
     });
   }
 
@@ -2026,15 +1683,11 @@ function buildTrackForDate(args: {
   }
 
   return track
-    .filter(
-      (segment) =>
-        segment.end > BOARD_START_HOUR &&
-        segment.start < BOARD_END_HOUR
-    )
+    .filter((segment) => segment.end > 8 && segment.start < 17)
     .map((segment) => ({
       ...segment,
-      start: Math.max(BOARD_START_HOUR, segment.start),
-      end: Math.min(BOARD_END_HOUR, segment.end),
+      start: Math.max(8, segment.start),
+      end: Math.min(17, segment.end),
     }))
     .sort((a, b) => a.start - b.start);
 }
@@ -2220,25 +1873,6 @@ function mapEventStatus(eventType: string): ActivityStatus {
   }
 }
 
-function formatHourHeader(hour: number) {
-  const normalized = ((hour % 24) + 24) % 24;
-  const suffix = normalized >= 12 ? "PM" : "AM";
-  const hour12 = normalized % 12 === 0 ? 12 : normalized % 12;
-  return `${hour12} ${suffix}`;
-}
-
-function formatLongDate(dateString: string) {
-  if (!dateString) return "";
-  const [year, month, day] = dateString.split("-").map(Number);
-  const date = new Date(year, month - 1, day, 12, 0, 0, 0);
-  return date.toLocaleDateString([], {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
 function formatClock(hour: number) {
   const totalMinutes = Math.round(hour * 60);
   const h = Math.floor(totalMinutes / 60);
@@ -2246,38 +1880,6 @@ function formatClock(hour: number) {
   const suffix = h >= 12 ? "PM" : "AM";
   const h12 = h % 12 === 0 ? 12 : h % 12;
   return `${h12}:${String(m).padStart(2, "0")} ${suffix}`;
-}
-
-function timeInputFromDate(date: Date) {
-  return `${String(date.getHours()).padStart(2, "0")}:${String(
-    date.getMinutes()
-  ).padStart(2, "0")}`;
-}
-
-function timeInputToDecimalHour(value: string) {
-  const match = /^(\d{2}):(\d{2})$/.exec(value);
-  if (!match) return null;
-
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-
-  if (
-    !Number.isInteger(hours) ||
-    !Number.isInteger(minutes) ||
-    hours < 0 ||
-    hours > 23 ||
-    minutes < 0 ||
-    minutes > 59
-  ) {
-    return null;
-  }
-
-  return hours + minutes / 60;
-}
-
-function formatTimeInputLabel(value: string) {
-  const hour = timeInputToDecimalHour(value);
-  return hour === null ? value : formatClock(hour);
 }
 
 function durationLabel(start: number, end: number) {
@@ -2331,7 +1933,6 @@ type HoverHintData = {
   customer?: string;
   place?: string;
   priority?: string;
-  description?: string;
   detail?: string;
 };
 
@@ -2401,25 +2002,9 @@ function HoverHintPortal({ hint }: { hint: HoverHintData | null }) {
         </div>
       </div>
 
-      {hint.description && (
-        <div className="mt-3 border-t border-slate-200 pt-2 dark:border-slate-800">
-          <div className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">
-            Description
-          </div>
-          <div className="mt-1 text-[10px] leading-4 text-slate-700 dark:text-slate-200">
-            {hint.description}
-          </div>
-        </div>
-      )}
-
       {hint.detail && (
-        <div className="mt-3 border-t border-slate-200 pt-2 dark:border-slate-800">
-          <div className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">
-            Details
-          </div>
-          <div className="mt-1 text-[10px] leading-4 text-muted-foreground">
-            {hint.detail}
-          </div>
+        <div className="mt-3 border-t border-slate-200 pt-2 text-[10px] leading-4 text-muted-foreground dark:border-slate-800">
+          {hint.detail}
         </div>
       )}
     </div>,
@@ -2434,13 +2019,13 @@ function SingleLineTimeline({
 }: {
   track: Segment[];
   technicianId: string;
-  onDropJob: (payload: DragJobPayload, techUuid: string, dropHour: number) => void;
+  onDropJob: (jobUuid: string, techUuid: string, dropHour: number) => void;
 }) {
   const [hint, setHint] = useState<HoverHintData | null>(null);
   const [dragHour, setDragHour] = useState<number | null>(null);
 
-  const startHour = BOARD_START_HOUR;
-  const totalHours = BOARD_TOTAL_HOURS;
+  const startHour = 8;
+  const totalHours = 9;
   const items = buildTrackItems(track);
 
   function openHint(
@@ -2483,55 +2068,18 @@ function SingleLineTimeline({
         event.preventDefault();
         const rect = event.currentTarget.getBoundingClientRect();
         const dropHour = snapHour(hourFromPointer(event.clientX, rect), 15);
-        const fieldOpsPayload = event.dataTransfer.getData(
-          "application/x-fieldops-job"
-        );
-        const fallbackJobUuid = event.dataTransfer.getData("text/plain");
+        const jobUuid = event.dataTransfer.getData("text/plain");
         setDragHour(null);
 
-        let payload: DragJobPayload | null = null;
-
-        if (fieldOpsPayload) {
-          try {
-            payload = JSON.parse(fieldOpsPayload) as DragJobPayload;
-          } catch {
-            payload = null;
-          }
-        }
-
-        if (!payload && fallbackJobUuid) {
-          payload = {
-            kind: "waiting",
-            jobUuid: fallbackJobUuid,
-          };
-        }
-
-        if (payload?.jobUuid) {
-          onDropJob(payload, technicianId, dropHour);
+        if (jobUuid) {
+          onDropJob(jobUuid, technicianId, dropHour);
         }
       }}
     >
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        {boardHours.map((hour) => (
-          <div
-            key={hour}
-            className="absolute bottom-0 top-0 border-l border-border/30"
-            style={{
-              left: `${
-                ((hour - BOARD_START_HOUR) / BOARD_TOTAL_HOURS) * 100
-              }%`,
-            }}
-          />
+      <div className="absolute inset-0 grid grid-cols-10 overflow-hidden">
+        {hours.map((hour) => (
+          <div key={hour} className="border-r border-border/30 last:border-r-0" />
         ))}
-        <div
-          className="absolute bottom-0 top-0 bg-amber-500/[0.035]"
-          style={{
-            left: `${
-              ((17 - BOARD_START_HOUR) / BOARD_TOTAL_HOURS) * 100
-            }%`,
-            right: 0,
-          }}
-        />
       </div>
 
       {dragHour !== null && (
@@ -2599,46 +2147,15 @@ function SingleLineTimeline({
               ? segment.notes ?? "Non-job time recorded on the technician schedule."
               : segment.status === "travelling"
               ? segment.notes ?? "Technician is travelling between assignments."
-              : segment.workOrderUuid
-              ? undefined
               : segment.notes ?? "Scheduled activity on this technician's daily track.";
-
-          const canMoveJob =
-            Boolean(segment.workOrderUuid) && segment.status !== "complete";
 
           return (
             <div
               key={`${segment.id}-${segment.time}-${index}`}
-              draggable={canMoveJob}
-              title={canMoveJob ? "Drag to move or reschedule this work order" : undefined}
-              className={`absolute top-0 z-30 h-full text-left ${
-                canMoveJob ? "cursor-grab active:cursor-grabbing" : "cursor-help"
-              }`}
+              className="absolute top-0 z-30 h-full cursor-help text-left"
               style={{
                 left: `${Math.max(0, left)}%`,
                 width: `${Math.max(width, 1.5)}%`,
-              }}
-              onDragStart={(event) => {
-                if (!canMoveJob || !segment.workOrderUuid) {
-                  event.preventDefault();
-                  return;
-                }
-
-                setHint(null);
-                event.dataTransfer.effectAllowed = "move";
-
-                const payload: DragJobPayload = {
-                  kind: "assigned",
-                  jobUuid: segment.workOrderUuid,
-                  sourceTechnicianUuid: technicianId,
-                  assignmentId: segment.assignmentId,
-                };
-
-                event.dataTransfer.setData(
-                  "application/x-fieldops-job",
-                  JSON.stringify(payload)
-                );
-                event.dataTransfer.setData("text/plain", segment.workOrderUuid);
               }}
               onMouseEnter={(event) =>
                 openHint(event.currentTarget, {
@@ -2650,9 +2167,6 @@ function SingleLineTimeline({
                   customer: segment.customer,
                   place: segment.place,
                   priority: segment.priority,
-                  description: segment.workOrderUuid
-                    ? segment.description ?? "No description provided."
-                    : undefined,
                   detail,
                 })
               }

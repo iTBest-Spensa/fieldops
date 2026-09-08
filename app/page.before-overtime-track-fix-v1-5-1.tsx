@@ -2026,15 +2026,11 @@ function buildTrackForDate(args: {
   }
 
   return track
-    .filter(
-      (segment) =>
-        segment.end > BOARD_START_HOUR &&
-        segment.start < BOARD_END_HOUR
-    )
+    .filter((segment) => segment.end > 8 && segment.start < 17)
     .map((segment) => ({
       ...segment,
-      start: Math.max(BOARD_START_HOUR, segment.start),
-      end: Math.min(BOARD_END_HOUR, segment.end),
+      start: Math.max(8, segment.start),
+      end: Math.min(17, segment.end),
     }))
     .sort((a, b) => a.start - b.start);
 }

@@ -119,7 +119,6 @@ type AssignmentModal = {
   tech: Technician;
   sourceTechnicianUuid?: string;
   assignmentId?: string;
-  date: string;
   startTime: string;
   endTime: string;
 };
@@ -210,13 +209,7 @@ type DbScheduleEvent = {
   notes: string | null;
 };
 
-const BOARD_START_HOUR = 6;
-const BOARD_END_HOUR = 22;
-const BOARD_TOTAL_HOURS = BOARD_END_HOUR - BOARD_START_HOUR;
-const boardHours = Array.from(
-  { length: BOARD_TOTAL_HOURS + 1 },
-  (_, index) => BOARD_START_HOUR + index
-);
+const hours = ["8 AM", "9 AM", "10 AM", "11 AM", "12 PM", "1 PM", "2 PM", "3 PM", "4 PM", "5 PM"];
 
 const statusColors: Record<ActivityStatus, { line: string; text: string; label: string }> = {
   complete: {
@@ -341,36 +334,9 @@ export default function Home() {
     boardCurrentTime !== null &&
     selectedDate === formatDateInput(boardCurrentTime) &&
     boardNowHour !== null &&
-    boardNowHour >= BOARD_START_HOUR &&
-    boardNowHour <= BOARD_END_HOUR;
-  const boardNowRatio =
-    boardNowHour === null
-      ? 0
-      : (boardNowHour - BOARD_START_HOUR) / BOARD_TOTAL_HOURS;
-  const boardNowLabel = boardCurrentTime
-    ? boardCurrentTime.toLocaleTimeString([], {
-        hour: "numeric",
-        minute: "2-digit",
-        second: "2-digit",
-      })
-    : "";
-  const quickDates = boardCurrentTime
-    ? [0, 1, 2, 3].map((offset) => {
-        const date = new Date(boardCurrentTime);
-        date.setDate(date.getDate() + offset);
-        return {
-          value: formatDateInput(date),
-          label:
-            offset === 0
-              ? "Today"
-              : date.toLocaleDateString([], {
-                  weekday: "short",
-                  month: "short",
-                  day: "numeric",
-                }),
-        };
-      })
-    : [];
+    boardNowHour >= 8 &&
+    boardNowHour <= 17;
+  const boardNowRatio = boardNowHour === null ? 0 : (boardNowHour - 8) / 9;
 
   const loadBoard = useCallback(async () => {
     setError(null);
@@ -478,7 +444,7 @@ export default function Home() {
     const updateBoardTime = () => setBoardCurrentTime(new Date());
     updateBoardTime();
 
-    // Browser Date is the actual local clock reported by the user's PC.
+    // Follow the browser/PC local clock continuously.
     const timer = window.setInterval(updateBoardTime, 1000);
     return () => window.clearInterval(timer);
   }, []);
@@ -652,17 +618,16 @@ export default function Home() {
     const startHour = timeInputToDecimalHour(assignmentModal.startTime);
     const endHour = timeInputToDecimalHour(assignmentModal.endTime);
 
-    if (!assignmentModal.date) {
-      setAssignmentError("Choose the assignment date.");
-      return;
-    }
-
     if (startHour === null || endHour === null) {
       setAssignmentError("Enter a valid start and end time.");
       return;
     }
 
-    // Overtime is allowed. Work is no longer restricted to 8 AM–5 PM.
+    if (startHour < 8 || endHour > 17) {
+      setAssignmentError("Dispatch time must stay inside the 8:00 AM–5:00 PM board.");
+      return;
+    }
+
     if (endHour <= startHour) {
       setAssignmentError("End time must be later than start time.");
       return;
@@ -677,58 +642,43 @@ export default function Home() {
       return;
     }
 
-    const start = dateAtHour(assignmentModal.date, startHour);
-    const end = dateAtHour(assignmentModal.date, endHour);
+    const duplicateAssignmentOnTarget = targetTech.track.some(
+      (segment) =>
+        segment.workOrderUuid === assignmentModal.job.uuid &&
+        segment.assignmentId !== assignmentModal.assignmentId
+    );
+
+    if (duplicateAssignmentOnTarget) {
+      setAssignmentError("This work order is already assigned to that technician.");
+      return;
+    }
+
+    const hasConflict = targetTech.track.some((segment) => {
+      if (
+        assignmentModal.assignmentId &&
+        segment.assignmentId === assignmentModal.assignmentId
+      ) {
+        return false;
+      }
+
+      return (
+        segment.status !== "available" &&
+        segment.id !== "OPEN" &&
+        rangesOverlap(startHour, endHour, segment.start, segment.end)
+      );
+    });
+
+    if (hasConflict) {
+      setAssignmentError(
+        "That edited time conflicts with another activity for this technician."
+      );
+      return;
+    }
+
+    const start = dateAtHour(selectedDate, startHour);
+    const end = dateAtHour(selectedDate, endHour);
     const startIso = start.toISOString();
     const endIso = end.toISOString();
-
-    // Check the real database so future-day scheduling is checked too.
-    let assignmentConflictQuery = supabase
-      .from("work_order_assignments")
-      .select("id,work_order_id,scheduled_start,scheduled_end")
-      .eq("technician_id", assignmentModal.tech.uuid)
-      .lt("scheduled_start", endIso)
-      .gt("scheduled_end", startIso);
-
-    if (assignmentModal.assignmentId) {
-      assignmentConflictQuery = assignmentConflictQuery.neq(
-        "id",
-        assignmentModal.assignmentId
-      );
-    }
-
-    const [assignmentConflicts, eventConflicts] = await Promise.all([
-      assignmentConflictQuery,
-      supabase
-        .from("technician_schedule_events")
-        .select("id,title,event_type,starts_at,ends_at")
-        .eq("technician_id", assignmentModal.tech.uuid)
-        .lt("starts_at", endIso)
-        .gt("ends_at", startIso),
-    ]);
-
-    if (assignmentConflicts.error) {
-      setAssignmentError(assignmentConflicts.error.message);
-      return;
-    }
-
-    if (eventConflicts.error) {
-      setAssignmentError(eventConflicts.error.message);
-      return;
-    }
-
-    if ((assignmentConflicts.data?.length ?? 0) > 0 || (eventConflicts.data?.length ?? 0) > 0) {
-      const conflictName =
-        eventConflicts.data?.[0]?.title ??
-        ((assignmentConflicts.data?.length ?? 0) > 0
-          ? "another work order"
-          : "another activity");
-
-      setAssignmentError(
-        `That time conflicts with ${conflictName}. Choose another date or time.`
-      );
-      return;
-    }
 
     setSavingAssignment(true);
 
@@ -802,17 +752,10 @@ export default function Home() {
       return;
     }
 
-    const destinationDate = assignmentModal.date;
-
     setAssignmentModal(null);
     setAssignmentError(null);
     setSavingAssignment(false);
-
-    if (destinationDate !== selectedDate) {
-      setSelectedDate(destinationDate);
-    } else {
-      await loadBoard();
-    }
+    await loadBoard();
   }
 
   function handleDropJob(
@@ -845,9 +788,13 @@ export default function Home() {
       );
     });
 
-    if (hasConflict) {
+    if (endHour > 17) {
       setAssignmentError(
-        "The dropped time overlaps another activity. Edit the date/start/end time before confirming."
+        "The dropped time runs past 5:00 PM. Edit the start/end time before confirming."
+      );
+    } else if (hasConflict) {
+      setAssignmentError(
+        "The dropped time overlaps another activity. Edit the start/end time before confirming."
       );
     } else {
       setAssignmentError(null);
@@ -867,7 +814,6 @@ export default function Home() {
       tech: modalTech,
       sourceTechnicianUuid: payload.sourceTechnicianUuid,
       assignmentId: payload.assignmentId,
-      date: selectedDate,
       startTime: timeInputFromDate(start),
       endTime: timeInputFromDate(end),
     });
@@ -951,21 +897,6 @@ export default function Home() {
                   className="bg-transparent outline-none"
                 />
               </label>
-
-              {quickDates.map((date) => (
-                <button
-                  key={date.value}
-                  type="button"
-                  onClick={() => setSelectedDate(date.value)}
-                  className={`h-10 border px-3 text-xs font-bold ${
-                    selectedDate === date.value
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border bg-card text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {date.label}
-                </button>
-              ))}
 
               <button
                 type="button"
@@ -1105,31 +1036,15 @@ export default function Home() {
 
                       <div className="grid grid-cols-[250px_minmax(0,1fr)] border-b border-border bg-background/30">
                         <div className="border-r border-border" />
-                        <div className="relative h-9">
-                          {boardHours.map((hour, index) => {
-                            const ratio =
-                              (hour - BOARD_START_HOUR) / BOARD_TOTAL_HOURS;
-                            const alignClass =
-                              index === 0
-                                ? "translate-x-0"
-                                : index === boardHours.length - 1
-                                ? "-translate-x-full"
-                                : "-translate-x-1/2";
-
-                            return (
-                              <div
-                                key={hour}
-                                className="absolute inset-y-0 border-l border-border/50"
-                                style={{ left: `${ratio * 100}%` }}
-                              >
-                                <span
-                                  className={`absolute top-1.5 whitespace-nowrap text-[9px] font-semibold text-muted-foreground ${alignClass}`}
-                                >
-                                  {formatHourHeader(hour)}
-                                </span>
-                              </div>
-                            );
-                          })}
+                        <div className="grid grid-cols-10">
+                          {hours.map((hour) => (
+                            <div
+                              key={hour}
+                              className="border-r border-border/50 px-1 py-2 text-center text-[10px] font-semibold text-muted-foreground last:border-r-0"
+                            >
+                              {hour}
+                            </div>
+                          ))}
                         </div>
                       </div>
 
@@ -1148,8 +1063,8 @@ export default function Home() {
                                 left: `calc(${boardNowRatio * 100}% + ${250 * (1 - boardNowRatio)}px)`,
                               }}
                             >
-                              <div className="absolute -top-5 -translate-x-1/2 whitespace-nowrap bg-rose-500 px-1.5 py-0.5 text-[8px] font-black text-white">
-                                NOW · {boardNowLabel}
+                              <div className="absolute -top-5 -translate-x-1/2 bg-rose-500 px-1.5 py-0.5 text-[8px] font-black text-white">
+                                NOW
                               </div>
                             </div>
                           )}
@@ -1673,29 +1588,10 @@ export default function Home() {
             <div className="mt-5 border border-border bg-muted/20 p-4">
               <div className="text-xs font-bold">Assignment time</div>
               <div className="mt-1 text-[11px] text-muted-foreground">
-                Dragging chooses the approximate slot. Change the day or exact time before confirming. Overtime after 5 PM is allowed.
+                Dragging chooses the approximate slot. Edit the exact time before confirming.
               </div>
 
-              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <label>
-                  <span className="mb-1.5 block text-[11px] font-bold">Date</span>
-                  <input
-                    type="date"
-                    value={assignmentModal.date}
-                    onChange={(event) =>
-                      setAssignmentModal((current) =>
-                        current
-                          ? {
-                              ...current,
-                              date: event.target.value,
-                            }
-                          : current
-                      )
-                    }
-                    className="h-11 w-full border border-border bg-card px-3 text-sm outline-none focus:border-primary"
-                  />
-                </label>
-
+              <div className="mt-4 grid grid-cols-2 gap-3">
                 <label>
                   <span className="mb-1.5 block text-[11px] font-bold">Start</span>
                   <input
@@ -1737,17 +1633,12 @@ export default function Home() {
                 </label>
               </div>
 
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                <span>
-                  {assignmentModal.startTime && assignmentModal.endTime
-                    ? `${formatLongDate(assignmentModal.date)} · ${formatTimeInputLabel(
-                        assignmentModal.startTime
-                      )} – ${formatTimeInputLabel(assignmentModal.endTime)}`
-                    : "Enter a date, start and end time."}
-                </span>
-                <span className="font-semibold text-amber-600 dark:text-amber-400">
-                  Daily board: 6 AM–10 PM · overtime supported
-                </span>
+              <div className="mt-3 text-[11px] text-muted-foreground">
+                {assignmentModal.startTime && assignmentModal.endTime
+                  ? `${formatTimeInputLabel(assignmentModal.startTime)} – ${formatTimeInputLabel(
+                      assignmentModal.endTime
+                    )}`
+                  : "Enter a start and end time."}
               </div>
             </div>
 
@@ -2026,15 +1917,11 @@ function buildTrackForDate(args: {
   }
 
   return track
-    .filter(
-      (segment) =>
-        segment.end > BOARD_START_HOUR &&
-        segment.start < BOARD_END_HOUR
-    )
+    .filter((segment) => segment.end > 8 && segment.start < 17)
     .map((segment) => ({
       ...segment,
-      start: Math.max(BOARD_START_HOUR, segment.start),
-      end: Math.min(BOARD_END_HOUR, segment.end),
+      start: Math.max(8, segment.start),
+      end: Math.min(17, segment.end),
     }))
     .sort((a, b) => a.start - b.start);
 }
@@ -2218,25 +2105,6 @@ function mapEventStatus(eventType: string): ActivityStatus {
     default:
       return "break";
   }
-}
-
-function formatHourHeader(hour: number) {
-  const normalized = ((hour % 24) + 24) % 24;
-  const suffix = normalized >= 12 ? "PM" : "AM";
-  const hour12 = normalized % 12 === 0 ? 12 : normalized % 12;
-  return `${hour12} ${suffix}`;
-}
-
-function formatLongDate(dateString: string) {
-  if (!dateString) return "";
-  const [year, month, day] = dateString.split("-").map(Number);
-  const date = new Date(year, month - 1, day, 12, 0, 0, 0);
-  return date.toLocaleDateString([], {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 function formatClock(hour: number) {
@@ -2439,8 +2307,8 @@ function SingleLineTimeline({
   const [hint, setHint] = useState<HoverHintData | null>(null);
   const [dragHour, setDragHour] = useState<number | null>(null);
 
-  const startHour = BOARD_START_HOUR;
-  const totalHours = BOARD_TOTAL_HOURS;
+  const startHour = 8;
+  const totalHours = 9;
   const items = buildTrackItems(track);
 
   function openHint(
@@ -2511,27 +2379,10 @@ function SingleLineTimeline({
         }
       }}
     >
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        {boardHours.map((hour) => (
-          <div
-            key={hour}
-            className="absolute bottom-0 top-0 border-l border-border/30"
-            style={{
-              left: `${
-                ((hour - BOARD_START_HOUR) / BOARD_TOTAL_HOURS) * 100
-              }%`,
-            }}
-          />
+      <div className="absolute inset-0 grid grid-cols-10 overflow-hidden">
+        {hours.map((hour) => (
+          <div key={hour} className="border-r border-border/30 last:border-r-0" />
         ))}
-        <div
-          className="absolute bottom-0 top-0 bg-amber-500/[0.035]"
-          style={{
-            left: `${
-              ((17 - BOARD_START_HOUR) / BOARD_TOTAL_HOURS) * 100
-            }%`,
-            right: 0,
-          }}
-        />
       </div>
 
       {dragHour !== null && (
