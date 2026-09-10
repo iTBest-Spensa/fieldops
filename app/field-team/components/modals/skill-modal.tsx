@@ -1,0 +1,13 @@
+"use client";
+
+import { X } from "lucide-react";
+import type { Dispatch, SetStateAction } from "react";
+import type { SkillForm } from "../../types";
+import { proficiencyLevels } from "../../constants";
+import { capitalize } from "../../utils";
+
+export function SkillModal({ open, form, setForm, saving, error, onSave, onClose }: { open: boolean; form: SkillForm; setForm: Dispatch<SetStateAction<SkillForm>>; saving: boolean; error: string | null; onSave: () => void; onClose: () => void }) {
+  if (!open) return null;
+  const fieldClass = "mt-1 h-10 w-full border border-border bg-background px-3 text-sm outline-none focus:border-primary";
+  return <div className="fixed inset-0 z-[91000] flex items-center justify-center p-4"><button type="button" aria-label="Close skill" onClick={onClose} className="absolute inset-0 bg-black/55" /><section className="relative z-10 w-full max-w-[620px] border border-border bg-background shadow-2xl"><div className="flex items-center justify-between border-b border-border px-5 py-4"><h2 className="text-lg font-black">Add Skill</h2><button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center border border-border"><X className="h-4 w-4" /></button></div><div className="space-y-4 p-5">{error && <div className="border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-500">{error}</div>}<label className="block text-xs font-bold">Skill name<input value={form.skillName} onChange={(e) => setForm((current) => ({ ...current, skillName: e.target.value }))} className={fieldClass} placeholder="Firewall, Windows, cabling..." /></label><label className="block text-xs font-bold">Proficiency<select value={form.proficiency} onChange={(e) => setForm((current) => ({ ...current, proficiency: e.target.value as SkillForm["proficiency"] }))} className={fieldClass}>{proficiencyLevels.map((item) => <option key={item} value={item}>{capitalize(item)}</option>)}</select></label><label className="block text-xs font-bold">Notes<textarea value={form.notes} onChange={(e) => setForm((current) => ({ ...current, notes: e.target.value }))} className="mt-1 min-h-24 w-full border border-border bg-background p-3 text-sm outline-none focus:border-primary" /></label></div><div className="flex justify-end gap-2 border-t border-border px-5 py-4"><button type="button" onClick={onClose} className="h-10 border border-border px-4 text-sm font-black">Cancel</button><button type="button" onClick={onSave} disabled={saving} className="h-10 bg-primary px-5 text-sm font-black text-primary-foreground disabled:opacity-60">{saving ? "Saving…" : "Add Skill"}</button></div></section></div>;
+}

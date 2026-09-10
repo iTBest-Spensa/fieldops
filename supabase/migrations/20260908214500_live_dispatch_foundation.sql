@@ -11,7 +11,6 @@ alter table public.work_orders
     check (estimated_duration_minutes > 0),
   add column if not exists required_skills text[] not null default '{}'::text[],
   add column if not exists service_area text;
-
 -- =========================================================
 -- TECHNICIAN PROFILE
 -- =========================================================
@@ -27,23 +26,18 @@ create table if not exists public.technician_profiles (
   updated_at timestamptz not null default now(),
   check (shift_end > shift_start)
 );
-
 create index if not exists idx_technician_profiles_service_area
   on public.technician_profiles(service_area);
-
 drop trigger if exists trg_technician_profiles_updated_at
   on public.technician_profiles;
-
 create trigger trg_technician_profiles_updated_at
 before update on public.technician_profiles
 for each row execute function private.set_updated_at();
-
 insert into public.technician_profiles (technician_id)
 select ur.user_id
 from public.user_roles ur
 where ur.role = 'technician'
 on conflict (technician_id) do nothing;
-
 -- =========================================================
 -- TECHNICIAN NON-JOB SCHEDULE EVENTS
 -- =========================================================
@@ -72,20 +66,15 @@ create table if not exists public.technician_schedule_events (
   updated_at timestamptz not null default now(),
   check (ends_at > starts_at)
 );
-
 create index if not exists idx_technician_schedule_events_technician_time
   on public.technician_schedule_events(technician_id, starts_at, ends_at);
-
 create index if not exists idx_technician_schedule_events_work_order
   on public.technician_schedule_events(work_order_id);
-
 drop trigger if exists trg_technician_schedule_events_updated_at
   on public.technician_schedule_events;
-
 create trigger trg_technician_schedule_events_updated_at
 before update on public.technician_schedule_events
 for each row execute function private.set_updated_at();
-
 -- =========================================================
 -- FIRST USER BOOTSTRAP
 -- The first FieldOps Auth user becomes admin only when no
@@ -117,7 +106,6 @@ begin
   return new;
 end;
 $$;
-
 do $$
 declare
   first_user uuid;
@@ -146,27 +134,22 @@ begin
   end if;
 end
 $$;
-
 -- =========================================================
 -- RLS
 -- =========================================================
 
 alter table public.technician_profiles enable row level security;
 alter table public.technician_schedule_events enable row level security;
-
 revoke all on table
   public.technician_profiles,
   public.technician_schedule_events
 from anon;
-
 grant select, insert, update, delete on table
   public.technician_profiles,
   public.technician_schedule_events
 to authenticated;
-
 drop policy if exists "user_roles_select_self_or_management"
   on public.user_roles;
-
 create policy "user_roles_select_self_or_management"
 on public.user_roles for select
 to authenticated
@@ -174,18 +157,14 @@ using (
   user_id = (select auth.uid())
   or (select private.has_any_role(array['admin','manager','dispatcher']::text[]))
 );
-
 drop policy if exists "technician_profiles_staff_select"
   on public.technician_profiles;
-
 create policy "technician_profiles_staff_select"
 on public.technician_profiles for select
 to authenticated
 using ((select private.is_active_user()));
-
 drop policy if exists "technician_profiles_manage"
   on public.technician_profiles;
-
 create policy "technician_profiles_manage"
 on public.technician_profiles for all
 to authenticated
@@ -197,10 +176,8 @@ with check (
   technician_id = (select auth.uid())
   or (select private.has_any_role(array['admin','manager','dispatcher']::text[]))
 );
-
 drop policy if exists "technician_schedule_events_select"
   on public.technician_schedule_events;
-
 create policy "technician_schedule_events_select"
 on public.technician_schedule_events for select
 to authenticated
@@ -208,10 +185,8 @@ using (
   technician_id = (select auth.uid())
   or (select private.has_any_role(array['admin','manager','dispatcher']::text[]))
 );
-
 drop policy if exists "technician_schedule_events_insert"
   on public.technician_schedule_events;
-
 create policy "technician_schedule_events_insert"
 on public.technician_schedule_events for insert
 to authenticated
@@ -222,10 +197,8 @@ with check (
   )
   or (select private.has_any_role(array['admin','manager','dispatcher']::text[]))
 );
-
 drop policy if exists "technician_schedule_events_update"
   on public.technician_schedule_events;
-
 create policy "technician_schedule_events_update"
 on public.technician_schedule_events for update
 to authenticated
@@ -237,10 +210,8 @@ with check (
   technician_id = (select auth.uid())
   or (select private.has_any_role(array['admin','manager','dispatcher']::text[]))
 );
-
 drop policy if exists "technician_schedule_events_delete"
   on public.technician_schedule_events;
-
 create policy "technician_schedule_events_delete"
 on public.technician_schedule_events for delete
 to authenticated
@@ -248,7 +219,6 @@ using (
   technician_id = (select auth.uid())
   or (select private.has_any_role(array['admin','manager','dispatcher']::text[]))
 );
-
 -- =========================================================
 -- REALTIME
 -- =========================================================
@@ -300,7 +270,6 @@ begin
   end if;
 end
 $$;
-
 alter table public.work_orders replica identity full;
 alter table public.work_order_assignments replica identity full;
 alter table public.technician_schedule_events replica identity full;

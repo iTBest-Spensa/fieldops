@@ -4,13 +4,10 @@
 -- Generated for a fresh Supabase project.
 
 create extension if not exists pgcrypto;
-
 create schema if not exists private;
-
 -- Human-readable numbering
 create sequence if not exists public.work_order_number_seq start with 1001;
 create sequence if not exists public.invoice_number_seq start with 1001;
-
 -- =========================================================
 -- USERS + ROLES
 -- =========================================================
@@ -24,7 +21,6 @@ create table if not exists public.profiles (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create table if not exists public.user_roles (
   user_id uuid not null references public.profiles(id) on delete cascade,
   role text not null check (
@@ -33,7 +29,6 @@ create table if not exists public.user_roles (
   created_at timestamptz not null default now(),
   primary key (user_id, role)
 );
-
 -- =========================================================
 -- CUSTOMERS
 -- =========================================================
@@ -52,7 +47,6 @@ create table if not exists public.customers (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create table if not exists public.sites (
   id uuid primary key default gen_random_uuid(),
   customer_id uuid not null references public.customers(id) on delete cascade,
@@ -71,7 +65,6 @@ create table if not exists public.sites (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create table if not exists public.contacts (
   id uuid primary key default gen_random_uuid(),
   customer_id uuid not null references public.customers(id) on delete cascade,
@@ -86,7 +79,6 @@ create table if not exists public.contacts (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 -- =========================================================
 -- INVENTORY + ASSETS
 -- =========================================================
@@ -101,7 +93,6 @@ create table if not exists public.inventory_locations (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create table if not exists public.inventory_items (
   id uuid primary key default gen_random_uuid(),
   sku text unique,
@@ -115,7 +106,6 @@ create table if not exists public.inventory_items (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create table if not exists public.assets (
   id uuid primary key default gen_random_uuid(),
   asset_tag text unique,
@@ -136,7 +126,6 @@ create table if not exists public.assets (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 -- =========================================================
 -- WORK ORDERS + DISPATCH
 -- =========================================================
@@ -196,7 +185,6 @@ create table if not exists public.work_orders (
     or scheduled_end >= scheduled_start
   )
 );
-
 create table if not exists public.work_order_assignments (
   id uuid primary key default gen_random_uuid(),
   work_order_id uuid not null references public.work_orders(id) on delete cascade,
@@ -213,7 +201,6 @@ create table if not exists public.work_order_assignments (
   updated_at timestamptz not null default now(),
   unique (work_order_id, technician_id)
 );
-
 create table if not exists public.work_order_events (
   id uuid primary key default gen_random_uuid(),
   work_order_id uuid not null references public.work_orders(id) on delete cascade,
@@ -225,7 +212,6 @@ create table if not exists public.work_order_events (
     default auth.uid(),
   created_at timestamptz not null default now()
 );
-
 create table if not exists public.work_order_notes (
   id uuid primary key default gen_random_uuid(),
   work_order_id uuid not null references public.work_orders(id) on delete cascade,
@@ -237,7 +223,6 @@ create table if not exists public.work_order_notes (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create table if not exists public.time_entries (
   id uuid primary key default gen_random_uuid(),
   work_order_id uuid not null references public.work_orders(id) on delete cascade,
@@ -252,7 +237,6 @@ create table if not exists public.time_entries (
   updated_at timestamptz not null default now(),
   check (ended_at is null or ended_at >= started_at)
 );
-
 create table if not exists public.material_usage (
   id uuid primary key default gen_random_uuid(),
   work_order_id uuid not null references public.work_orders(id) on delete cascade,
@@ -266,7 +250,6 @@ create table if not exists public.material_usage (
     default auth.uid(),
   created_at timestamptz not null default now()
 );
-
 create table if not exists public.inventory_transactions (
   id uuid primary key default gen_random_uuid(),
   inventory_item_id uuid not null references public.inventory_items(id) on delete restrict,
@@ -284,7 +267,6 @@ create table if not exists public.inventory_transactions (
     default auth.uid(),
   created_at timestamptz not null default now()
 );
-
 create table if not exists public.asset_history (
   id uuid primary key default gen_random_uuid(),
   asset_id uuid not null references public.assets(id) on delete cascade,
@@ -299,7 +281,6 @@ create table if not exists public.asset_history (
     default auth.uid(),
   created_at timestamptz not null default now()
 );
-
 -- =========================================================
 -- BILLING
 -- =========================================================
@@ -336,7 +317,6 @@ create table if not exists public.invoices (
 
   check (due_date is null or issued_date is null or due_date >= issued_date)
 );
-
 create table if not exists public.invoice_items (
   id uuid primary key default gen_random_uuid(),
   invoice_id uuid not null references public.invoices(id) on delete cascade,
@@ -351,7 +331,6 @@ create table if not exists public.invoice_items (
   sort_order integer not null default 0,
   created_at timestamptz not null default now()
 );
-
 create table if not exists public.payments (
   id uuid primary key default gen_random_uuid(),
   invoice_id uuid not null references public.invoices(id) on delete restrict,
@@ -367,7 +346,6 @@ create table if not exists public.payments (
     default auth.uid(),
   created_at timestamptz not null default now()
 );
-
 -- =========================================================
 -- INDEXES
 -- =========================================================
@@ -375,13 +353,11 @@ create table if not exists public.payments (
 create index if not exists idx_sites_customer on public.sites(customer_id);
 create index if not exists idx_contacts_customer on public.contacts(customer_id);
 create index if not exists idx_contacts_site on public.contacts(site_id);
-
 create index if not exists idx_work_orders_customer on public.work_orders(customer_id);
 create index if not exists idx_work_orders_site on public.work_orders(site_id);
 create index if not exists idx_work_orders_status on public.work_orders(status);
 create index if not exists idx_work_orders_priority on public.work_orders(priority);
 create index if not exists idx_work_orders_schedule on public.work_orders(scheduled_start);
-
 create index if not exists idx_assignments_work_order
   on public.work_order_assignments(work_order_id);
 create index if not exists idx_assignments_technician
@@ -396,7 +372,6 @@ create index if not exists idx_time_entries_technician
   on public.time_entries(technician_id);
 create index if not exists idx_material_usage_work_order
   on public.material_usage(work_order_id);
-
 create index if not exists idx_assets_customer on public.assets(customer_id);
 create index if not exists idx_assets_site on public.assets(site_id);
 create index if not exists idx_assets_assigned_to on public.assets(assigned_to);
@@ -404,12 +379,10 @@ create index if not exists idx_inventory_transactions_item
   on public.inventory_transactions(inventory_item_id, created_at);
 create index if not exists idx_inventory_transactions_work_order
   on public.inventory_transactions(work_order_id);
-
 create index if not exists idx_invoices_customer on public.invoices(customer_id);
 create index if not exists idx_invoices_work_order on public.invoices(work_order_id);
 create index if not exists idx_invoices_status on public.invoices(status);
 create index if not exists idx_payments_invoice on public.payments(invoice_id);
-
 -- =========================================================
 -- UPDATED_AT TRIGGER
 -- =========================================================
@@ -424,7 +397,6 @@ begin
   return new;
 end;
 $$;
-
 do $$
 declare
   t text;
@@ -453,7 +425,6 @@ begin
   end loop;
 end
 $$;
-
 -- =========================================================
 -- PROFILE CREATION FROM SUPABASE AUTH
 -- =========================================================
@@ -477,13 +448,10 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists on_auth_user_created on auth.users;
-
 create trigger on_auth_user_created
 after insert on auth.users
 for each row execute function private.handle_new_user();
-
 -- Backfill any Auth users that existed before this migration.
 insert into public.profiles (id, full_name, email)
 select
@@ -492,7 +460,6 @@ select
   u.email
 from auth.users u
 on conflict (id) do nothing;
-
 -- =========================================================
 -- RLS HELPERS
 -- =========================================================
@@ -511,7 +478,6 @@ as $$
       and p.active = true
   );
 $$;
-
 create or replace function private.has_any_role(required_roles text[])
 returns boolean
 language sql
@@ -528,7 +494,6 @@ as $$
       and ur.role = any(required_roles)
   );
 $$;
-
 create or replace function private.is_assigned_to_work_order(target_work_order_id uuid)
 returns boolean
 language sql
@@ -546,16 +511,13 @@ as $$
       and p.active = true
   );
 $$;
-
 revoke all on function private.is_active_user() from public;
 revoke all on function private.has_any_role(text[]) from public;
 revoke all on function private.is_assigned_to_work_order(uuid) from public;
-
 grant usage on schema private to authenticated;
 grant execute on function private.is_active_user() to authenticated;
 grant execute on function private.has_any_role(text[]) to authenticated;
 grant execute on function private.is_assigned_to_work_order(uuid) to authenticated;
-
 -- =========================================================
 -- ENABLE RLS
 -- =========================================================
@@ -579,7 +541,6 @@ alter table public.asset_history enable row level security;
 alter table public.invoices enable row level security;
 alter table public.invoice_items enable row level security;
 alter table public.payments enable row level security;
-
 -- No anonymous access to application data.
 revoke all on table
   public.profiles,
@@ -602,7 +563,6 @@ revoke all on table
   public.invoice_items,
   public.payments
 from anon;
-
 grant select, insert, update, delete on table
   public.profiles,
   public.user_roles,
@@ -624,12 +584,10 @@ grant select, insert, update, delete on table
   public.invoice_items,
   public.payments
 to authenticated;
-
 grant usage, select on sequence
   public.work_order_number_seq,
   public.invoice_number_seq
 to authenticated;
-
 -- =========================================================
 -- RLS POLICIES: PROFILES + ROLES
 -- =========================================================
@@ -638,19 +596,16 @@ create policy "profiles_select_active_staff"
 on public.profiles for select
 to authenticated
 using ((select private.is_active_user()));
-
 create policy "profiles_update_self"
 on public.profiles for update
 to authenticated
 using (id = (select auth.uid()))
 with check (id = (select auth.uid()));
-
 create policy "profiles_admin_update"
 on public.profiles for update
 to authenticated
 using ((select private.has_any_role(array['admin']::text[])))
 with check ((select private.has_any_role(array['admin']::text[])));
-
 create policy "user_roles_select_self_or_management"
 on public.user_roles for select
 to authenticated
@@ -658,23 +613,19 @@ using (
   user_id = (select auth.uid())
   or (select private.has_any_role(array['admin','manager']::text[]))
 );
-
 create policy "user_roles_admin_insert"
 on public.user_roles for insert
 to authenticated
 with check ((select private.has_any_role(array['admin']::text[])));
-
 create policy "user_roles_admin_update"
 on public.user_roles for update
 to authenticated
 using ((select private.has_any_role(array['admin']::text[])))
 with check ((select private.has_any_role(array['admin']::text[])));
-
 create policy "user_roles_admin_delete"
 on public.user_roles for delete
 to authenticated
 using ((select private.has_any_role(array['admin']::text[])));
-
 -- =========================================================
 -- RLS POLICIES: CUSTOMERS
 -- =========================================================
@@ -683,65 +634,53 @@ create policy "customers_staff_select"
 on public.customers for select
 to authenticated
 using ((select private.is_active_user()));
-
 create policy "customers_ops_insert"
 on public.customers for insert
 to authenticated
 with check ((select private.has_any_role(array['admin','manager','dispatcher']::text[])));
-
 create policy "customers_ops_update"
 on public.customers for update
 to authenticated
 using ((select private.has_any_role(array['admin','manager','dispatcher']::text[])))
 with check ((select private.has_any_role(array['admin','manager','dispatcher']::text[])));
-
 create policy "customers_admin_delete"
 on public.customers for delete
 to authenticated
 using ((select private.has_any_role(array['admin']::text[])));
-
 create policy "sites_staff_select"
 on public.sites for select
 to authenticated
 using ((select private.is_active_user()));
-
 create policy "sites_ops_insert"
 on public.sites for insert
 to authenticated
 with check ((select private.has_any_role(array['admin','manager','dispatcher']::text[])));
-
 create policy "sites_ops_update"
 on public.sites for update
 to authenticated
 using ((select private.has_any_role(array['admin','manager','dispatcher']::text[])))
 with check ((select private.has_any_role(array['admin','manager','dispatcher']::text[])));
-
 create policy "sites_admin_delete"
 on public.sites for delete
 to authenticated
 using ((select private.has_any_role(array['admin']::text[])));
-
 create policy "contacts_staff_select"
 on public.contacts for select
 to authenticated
 using ((select private.is_active_user()));
-
 create policy "contacts_ops_insert"
 on public.contacts for insert
 to authenticated
 with check ((select private.has_any_role(array['admin','manager','dispatcher']::text[])));
-
 create policy "contacts_ops_update"
 on public.contacts for update
 to authenticated
 using ((select private.has_any_role(array['admin','manager','dispatcher']::text[])))
 with check ((select private.has_any_role(array['admin','manager','dispatcher']::text[])));
-
 create policy "contacts_admin_delete"
 on public.contacts for delete
 to authenticated
 using ((select private.has_any_role(array['admin']::text[])));
-
 -- =========================================================
 -- RLS POLICIES: WORK ORDERS
 -- =========================================================
@@ -753,14 +692,12 @@ using (
   (select private.has_any_role(array['admin','manager','dispatcher','billing','inventory']::text[]))
   or (select private.is_assigned_to_work_order(id))
 );
-
 create policy "work_orders_ops_insert"
 on public.work_orders for insert
 to authenticated
 with check (
   (select private.has_any_role(array['admin','manager','dispatcher']::text[]))
 );
-
 create policy "work_orders_ops_update"
 on public.work_orders for update
 to authenticated
@@ -770,12 +707,10 @@ using (
 with check (
   (select private.has_any_role(array['admin','manager','dispatcher']::text[]))
 );
-
 create policy "work_orders_admin_delete"
 on public.work_orders for delete
 to authenticated
 using ((select private.has_any_role(array['admin']::text[])));
-
 create policy "assignments_select_authorized"
 on public.work_order_assignments for select
 to authenticated
@@ -783,14 +718,12 @@ using (
   technician_id = (select auth.uid())
   or (select private.has_any_role(array['admin','manager','dispatcher','billing','inventory']::text[]))
 );
-
 create policy "assignments_ops_insert"
 on public.work_order_assignments for insert
 to authenticated
 with check (
   (select private.has_any_role(array['admin','manager','dispatcher']::text[]))
 );
-
 create policy "assignments_ops_update"
 on public.work_order_assignments for update
 to authenticated
@@ -800,14 +733,12 @@ using (
 with check (
   (select private.has_any_role(array['admin','manager','dispatcher']::text[]))
 );
-
 create policy "assignments_ops_delete"
 on public.work_order_assignments for delete
 to authenticated
 using (
   (select private.has_any_role(array['admin','manager','dispatcher']::text[]))
 );
-
 create policy "events_select_authorized"
 on public.work_order_events for select
 to authenticated
@@ -815,7 +746,6 @@ using (
   (select private.has_any_role(array['admin','manager','dispatcher','billing','inventory']::text[]))
   or (select private.is_assigned_to_work_order(work_order_id))
 );
-
 create policy "events_insert_authorized"
 on public.work_order_events for insert
 to authenticated
@@ -823,12 +753,10 @@ with check (
   (select private.has_any_role(array['admin','manager','dispatcher']::text[]))
   or (select private.is_assigned_to_work_order(work_order_id))
 );
-
 create policy "events_admin_delete"
 on public.work_order_events for delete
 to authenticated
 using ((select private.has_any_role(array['admin']::text[])));
-
 create policy "notes_select_authorized"
 on public.work_order_notes for select
 to authenticated
@@ -836,7 +764,6 @@ using (
   (select private.has_any_role(array['admin','manager','dispatcher','billing','inventory']::text[]))
   or (select private.is_assigned_to_work_order(work_order_id))
 );
-
 create policy "notes_insert_authorized"
 on public.work_order_notes for insert
 to authenticated
@@ -847,7 +774,6 @@ with check (
     or (select private.is_assigned_to_work_order(work_order_id))
   )
 );
-
 create policy "notes_update_own_or_ops"
 on public.work_order_notes for update
 to authenticated
@@ -859,12 +785,10 @@ with check (
   created_by = (select auth.uid())
   or (select private.has_any_role(array['admin','manager','dispatcher']::text[]))
 );
-
 create policy "notes_admin_delete"
 on public.work_order_notes for delete
 to authenticated
 using ((select private.has_any_role(array['admin']::text[])));
-
 create policy "time_entries_select_authorized"
 on public.time_entries for select
 to authenticated
@@ -872,7 +796,6 @@ using (
   technician_id = (select auth.uid())
   or (select private.has_any_role(array['admin','manager','dispatcher','billing']::text[]))
 );
-
 create policy "time_entries_insert_authorized"
 on public.time_entries for insert
 to authenticated
@@ -883,7 +806,6 @@ with check (
   )
   or (select private.has_any_role(array['admin','manager','dispatcher']::text[]))
 );
-
 create policy "time_entries_update_authorized"
 on public.time_entries for update
 to authenticated
@@ -895,12 +817,10 @@ with check (
   technician_id = (select auth.uid())
   or (select private.has_any_role(array['admin','manager']::text[]))
 );
-
 create policy "time_entries_admin_delete"
 on public.time_entries for delete
 to authenticated
 using ((select private.has_any_role(array['admin']::text[])));
-
 create policy "material_usage_select_authorized"
 on public.material_usage for select
 to authenticated
@@ -908,7 +828,6 @@ using (
   (select private.has_any_role(array['admin','manager','dispatcher','billing','inventory']::text[]))
   or (select private.is_assigned_to_work_order(work_order_id))
 );
-
 create policy "material_usage_insert_authorized"
 on public.material_usage for insert
 to authenticated
@@ -919,14 +838,12 @@ with check (
     or (select private.is_assigned_to_work_order(work_order_id))
   )
 );
-
 create policy "material_usage_admin_delete"
 on public.material_usage for delete
 to authenticated
 using (
   (select private.has_any_role(array['admin','manager','inventory']::text[]))
 );
-
 -- =========================================================
 -- RLS POLICIES: INVENTORY + ASSETS
 -- =========================================================
@@ -935,40 +852,33 @@ create policy "inventory_locations_staff_select"
 on public.inventory_locations for select
 to authenticated
 using ((select private.is_active_user()));
-
 create policy "inventory_locations_manage"
 on public.inventory_locations for all
 to authenticated
 using ((select private.has_any_role(array['admin','manager','inventory']::text[])))
 with check ((select private.has_any_role(array['admin','manager','inventory']::text[])));
-
 create policy "inventory_items_staff_select"
 on public.inventory_items for select
 to authenticated
 using ((select private.is_active_user()));
-
 create policy "inventory_items_manage"
 on public.inventory_items for all
 to authenticated
 using ((select private.has_any_role(array['admin','manager','inventory']::text[])))
 with check ((select private.has_any_role(array['admin','manager','inventory']::text[])));
-
 create policy "assets_staff_select"
 on public.assets for select
 to authenticated
 using ((select private.is_active_user()));
-
 create policy "assets_manage"
 on public.assets for all
 to authenticated
 using ((select private.has_any_role(array['admin','manager','inventory']::text[])))
 with check ((select private.has_any_role(array['admin','manager','inventory']::text[])));
-
 create policy "inventory_transactions_staff_select"
 on public.inventory_transactions for select
 to authenticated
 using ((select private.is_active_user()));
-
 create policy "inventory_transactions_staff_insert"
 on public.inventory_transactions for insert
 to authenticated
@@ -976,23 +886,19 @@ with check (
   created_by = (select auth.uid())
   and (select private.has_any_role(array['admin','manager','dispatcher','technician','inventory']::text[]))
 );
-
 create policy "inventory_transactions_manage_update"
 on public.inventory_transactions for update
 to authenticated
 using ((select private.has_any_role(array['admin','manager','inventory']::text[])))
 with check ((select private.has_any_role(array['admin','manager','inventory']::text[])));
-
 create policy "inventory_transactions_manage_delete"
 on public.inventory_transactions for delete
 to authenticated
 using ((select private.has_any_role(array['admin','manager','inventory']::text[])));
-
 create policy "asset_history_staff_select"
 on public.asset_history for select
 to authenticated
 using ((select private.is_active_user()));
-
 create policy "asset_history_staff_insert"
 on public.asset_history for insert
 to authenticated
@@ -1000,12 +906,10 @@ with check (
   created_by = (select auth.uid())
   and (select private.has_any_role(array['admin','manager','dispatcher','technician','inventory']::text[]))
 );
-
 create policy "asset_history_admin_delete"
 on public.asset_history for delete
 to authenticated
 using ((select private.has_any_role(array['admin']::text[])));
-
 -- =========================================================
 -- RLS POLICIES: BILLING
 -- =========================================================
@@ -1016,14 +920,12 @@ to authenticated
 using (
   (select private.has_any_role(array['admin','manager','billing','dispatcher']::text[]))
 );
-
 create policy "invoices_billing_insert"
 on public.invoices for insert
 to authenticated
 with check (
   (select private.has_any_role(array['admin','manager','billing']::text[]))
 );
-
 create policy "invoices_billing_update"
 on public.invoices for update
 to authenticated
@@ -1033,26 +935,22 @@ using (
 with check (
   (select private.has_any_role(array['admin','manager','billing']::text[]))
 );
-
 create policy "invoices_admin_delete"
 on public.invoices for delete
 to authenticated
 using ((select private.has_any_role(array['admin']::text[])));
-
 create policy "invoice_items_authorized_select"
 on public.invoice_items for select
 to authenticated
 using (
   (select private.has_any_role(array['admin','manager','billing','dispatcher']::text[]))
 );
-
 create policy "invoice_items_billing_insert"
 on public.invoice_items for insert
 to authenticated
 with check (
   (select private.has_any_role(array['admin','manager','billing']::text[]))
 );
-
 create policy "invoice_items_billing_update"
 on public.invoice_items for update
 to authenticated
@@ -1062,28 +960,24 @@ using (
 with check (
   (select private.has_any_role(array['admin','manager','billing']::text[]))
 );
-
 create policy "invoice_items_billing_delete"
 on public.invoice_items for delete
 to authenticated
 using (
   (select private.has_any_role(array['admin','manager','billing']::text[]))
 );
-
 create policy "payments_authorized_select"
 on public.payments for select
 to authenticated
 using (
   (select private.has_any_role(array['admin','manager','billing']::text[]))
 );
-
 create policy "payments_billing_insert"
 on public.payments for insert
 to authenticated
 with check (
   (select private.has_any_role(array['admin','manager','billing']::text[]))
 );
-
 create policy "payments_billing_update"
 on public.payments for update
 to authenticated
@@ -1093,7 +987,6 @@ using (
 with check (
   (select private.has_any_role(array['admin','manager','billing']::text[]))
 );
-
 create policy "payments_admin_delete"
 on public.payments for delete
 to authenticated

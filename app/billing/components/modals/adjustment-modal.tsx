@@ -1,0 +1,13 @@
+"use client";
+import type { AdjustmentForm } from "../../types";
+import { ModalShell } from "../modal-shell";
+
+export function AdjustmentModal({ open, form, error, saving, onChange, onSave, onClose }: { open: boolean; form: AdjustmentForm; error: string | null; saving: boolean; onChange: (form: AdjustmentForm) => void; onSave: () => void; onClose: () => void }) {
+  if (!open) return null;
+  return <ModalShell title="Invoice adjustment" eyebrow="Credit / charge" onClose={onClose} footer={<div className="flex justify-end gap-2"><button type="button" onClick={onClose} className="h-10 border border-border px-4 text-sm font-bold">Cancel</button><button type="button" disabled={saving} onClick={onSave} className="h-10 bg-primary px-4 text-sm font-black text-primary-foreground disabled:opacity-60">{saving ? "Posting…" : form.adjustmentType === "credit" ? "Post Credit" : "Post Charge"}</button></div>}>
+    <div className="grid gap-3 sm:grid-cols-2"><button type="button" onClick={() => onChange({ ...form, adjustmentType: "credit" })} className={`border p-4 text-left ${form.adjustmentType === "credit" ? "border-primary bg-primary/10" : "border-border"}`}><div className="font-black">Credit note</div><div className="mt-1 text-xs text-muted-foreground">Reduces the invoice total.</div></button><button type="button" onClick={() => onChange({ ...form, adjustmentType: "charge" })} className={`border p-4 text-left ${form.adjustmentType === "charge" ? "border-primary bg-primary/10" : "border-border"}`}><div className="font-black">Additional charge</div><div className="mt-1 text-xs text-muted-foreground">Increases the invoice total.</div></button></div>
+    <div className="mt-4 grid gap-4 md:grid-cols-2"><label><span className="mb-1 block text-xs font-black">Amount</span><input value={form.amount} onChange={(e) => onChange({ ...form, amount: e.target.value })} inputMode="decimal" className="h-11 w-full border border-border bg-card px-3" placeholder="0.00" /></label><label><span className="mb-1 block text-xs font-black">Reason</span><input value={form.reason} onChange={(e) => onChange({ ...form, reason: e.target.value })} className="h-11 w-full border border-border bg-card px-3" placeholder="Required" /></label></div>
+    <label className="mt-4 block"><span className="mb-1 block text-xs font-black">Notes</span><textarea value={form.notes} onChange={(e) => onChange({ ...form, notes: e.target.value })} className="min-h-24 w-full border border-border bg-card p-3" placeholder="Optional" /></label>
+    {error ? <div className="mt-4 border border-rose-500/40 bg-rose-500/10 p-3 text-sm font-semibold text-rose-700 dark:text-rose-200">{error}</div> : null}
+  </ModalShell>;
+}

@@ -1,0 +1,53 @@
+FIELDOPS PAGE-FOLDER STRUCTURE V1
+
+MAIN APP ROUTES
+
+app/
+  page.tsx                  -> redirects to /dispatch only
+  dashboard/
+    page.tsx                -> Dashboard page
+  dispatch/
+    page.tsx                -> CURRENT LIVE Dispatch
+    README.txt
+  work-orders/
+    page.tsx                -> CURRENT Work Orders
+    README.txt
+  customers/
+    page.tsx
+  field-team/
+    page.tsx
+  assets/
+    page.tsx
+  inventory/
+    page.tsx
+  billing/
+    page.tsx
+  reports/
+    page.tsx
+  settings/
+    page.tsx
+
+AUTH / FRAMEWORK ROUTES
+These remain separate because they are application infrastructure:
+  app/auth/...
+  app/protected/...
+  app/layout.tsx
+  app/globals.css
+
+SHARED INFRASTRUCTURE
+Shared code stays shared, not copied page-by-page:
+  lib/supabase/...
+  components/fieldops-theme-toggle.tsx
+  components/ui/...
+
+LEGACY CLEANUP PERFORMED BY INSTALL SCRIPT
+- old app/(dashboard)/dispatch preview route -> backup
+- old components/dispatch preview implementation -> backup
+- app/page.before-*.tsx / page.approved-*.tsx -> backup
+- _fieldops_dispatch_docs -> backup
+
+IMPORTANT
+The old root app/page.tsx was your live Dispatch. This package moves that exact current source into app/dispatch/page.tsx.
+The root app/page.tsx becomes a redirect only.
+
+Work Orders Locate in Dispatch changes from /?focus=... to /dispatch?focus=... so locator routing continues to work after the move.
