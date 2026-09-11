@@ -17,7 +17,7 @@ export function BillingRecoveryModal(props: Props) {
         className="absolute inset-0 bg-black/60"
       />
 
-      <section className="relative z-10 w-full max-w-[620px] border border-border bg-background p-5 shadow-2xl">
+      <section className="relative z-10 w-full max-w-[620px] rounded-2xl border border-border bg-background p-5 shadow-2xl">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-xs font-black text-cyan-600 dark:text-cyan-400">
@@ -34,7 +34,7 @@ export function BillingRecoveryModal(props: Props) {
             type="button"
             disabled={savingBillingRecovery}
             onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center border border-border"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border"
           >
             <X className="h-4 w-4" />
           </button>
@@ -62,7 +62,7 @@ export function BillingRecoveryModal(props: Props) {
               setBillingRecoveryReason(event.target.value)
             }
             placeholder="e.g. Work order was closed before billing was prepared."
-            className="w-full border border-border bg-card p-3 text-sm"
+            className="w-full rounded-xl border border-border bg-card p-3 text-sm"
           />
         </label>
 
@@ -71,7 +71,7 @@ export function BillingRecoveryModal(props: Props) {
             type="button"
             disabled={savingBillingRecovery}
             onClick={onClose}
-            className="h-10 border border-border px-4 text-sm font-bold"
+            className="h-10 rounded-xl border border-border px-4 text-sm font-bold"
           >
             Cancel
           </button>
@@ -79,7 +79,7 @@ export function BillingRecoveryModal(props: Props) {
             type="button"
             disabled={savingBillingRecovery}
             onClick={onSave}
-            className="h-10 bg-cyan-600 px-5 text-sm font-bold text-white disabled:opacity-40"
+            className="h-10 rounded-xl bg-cyan-600 px-5 text-sm font-bold text-white disabled:opacity-40"
           >
             {savingBillingRecovery ? "Sending…" : "Send to Billing"}
           </button>

@@ -26,13 +26,13 @@ import {
   Truck,
   UserRound,
   Users,
-  Wrench,
   X,
 } from "lucide-react";
 import { FieldOpsThemeToggle } from "@/components/fieldops-theme-toggle";
+import { CompanyBrand } from "@/components/company-brand";
 import { createClient } from "@/lib/supabase/client";
 
-import type { AssignTechnicianForm, DbAssignment, DbCustomer, DbEvent, DbNote, DbProfile, DbRole, DbSite, DbTimeEntry, DbWorkOrder, EditWorkOrderForm, NewWorkOrderForm, ServerAvailability, SummaryView, TimeEditorForm, WorkOrderOverrun, WorkOrderStatus } from "./types";
+import type { AssignTechnicianForm, DbAssignment, DbCustomer, DbEvent, DbInventoryItem, DbInventoryLocation, DbInventoryTransaction, DbMaterialUsage, DbNote, DbProfile, DbRateDefaults, DbRole, DbSite, DbTimeCorrection, DbTimeEntry, DbWorkOrder, EditWorkOrderForm, NewWorkOrderForm, ServerAvailability, SummaryView, TimeEditorForm, WorkOrderOverrun, WorkOrderStatus } from "./types";
 import { emptyNewWorkOrderForm, navigation, priorities, workOrderStatuses } from "./constants";
 import { billingStatusLabel, combineLocalDateAndTime, dateInputFromIso, dateTimeLocalInputFromIso, formatCompactDateTime, formatDateInput, formatLocalDateTime, formatLocalDateTime24, formatTime24, intervalsOverlap, isTerminalWorkOrderStatus, localDateTime, minutesLabel, priorityTone, safeDurationMinutes, statusLabel, statusTone, timeInputFromIso, varianceLabel } from "./utils";
 import { SummaryCard } from "./components/summary-card";
@@ -43,6 +43,7 @@ import { AssignTechnicianModal } from "./components/modals/assign-technician-mod
 import { TechnicianTimeModal } from "./components/modals/technician-time-modal";
 import { BillingRecoveryModal } from "./components/modals/billing-recovery-modal";
 import { NewWorkOrderModal } from "./components/modals/new-work-order-modal";
+import { WorkOrderMaterialModal, WorkOrderMaterialReturnModal, materialStockKey, type AddMaterialForm, type MaterialStockBalances, type ReturnMaterialForm, type WorkOrderMaterialUsage } from "@/components/work-order-material-modal";
 
 export default function WorkOrdersPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -55,6 +56,11 @@ export default function WorkOrdersPage() {
   const [profiles, setProfiles] = useState<DbProfile[]>([]);
   const [roles, setRoles] = useState<DbRole[]>([]);
   const [timeEntries, setTimeEntries] = useState<DbTimeEntry[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<DbInventoryItem[]>([]);
+  const [inventoryLocations, setInventoryLocations] = useState<DbInventoryLocation[]>([]);
+  const [materialUsages, setMaterialUsages] = useState<DbMaterialUsage[]>([]);
+  const [inventoryTransactions, setInventoryTransactions] = useState<DbInventoryTransaction[]>([]);
+  const [rateDefaults, setRateDefaults] = useState<DbRateDefaults>({ default_customer_billing_rate: 0, default_technician_pay_rate: 0 });
   const [localNowMs, setLocalNowMs] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [authRequired, setAuthRequired] = useState(false);
@@ -81,6 +87,7 @@ export default function WorkOrdersPage() {
   const [assignError, setAssignError] = useState<string | null>(null);
   const [events, setEvents] = useState<DbEvent[]>([]);
   const [notes, setNotes] = useState<DbNote[]>([]);
+  const [timeCorrections, setTimeCorrections] = useState<DbTimeCorrection[]>([]);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [draftStatus, setDraftStatus] = useState<WorkOrderStatus>("requested");
   const [savingStatus, setSavingStatus] = useState(false);
@@ -116,6 +123,18 @@ export default function WorkOrdersPage() {
   const [billingRecoveryReason, setBillingRecoveryReason] = useState("");
   const [savingBillingRecovery, setSavingBillingRecovery] = useState(false);
   const [billingRecoveryError, setBillingRecoveryError] = useState<string | null>(null);
+
+  const emptyMaterialForm: AddMaterialForm = { locationId: "", selectedItems: [], activeInventoryItemId: "", notes: "" };
+  const emptyMaterialReturnForm: ReturnMaterialForm = { locationId: "", quantity: "1", reason: "" };
+  const [materialOpen, setMaterialOpen] = useState(false);
+  const [materialForm, setMaterialForm] = useState<AddMaterialForm>(emptyMaterialForm);
+  const [materialError, setMaterialError] = useState<string | null>(null);
+  const [savingMaterial, setSavingMaterial] = useState(false);
+  const [returnMaterialOpen, setReturnMaterialOpen] = useState(false);
+  const [returnMaterialUsage, setReturnMaterialUsage] = useState<DbMaterialUsage | null>(null);
+  const [returnMaterialForm, setReturnMaterialForm] = useState<ReturnMaterialForm>(emptyMaterialReturnForm);
+  const [returnMaterialError, setReturnMaterialError] = useState<string | null>(null);
+  const [savingMaterialReturn, setSavingMaterialReturn] = useState(false);
 
   const [serverAvailability, setServerAvailability] = useState<
     Map<string, ServerAvailability>
@@ -161,6 +180,16 @@ export default function WorkOrdersPage() {
     () => new Map(profiles.map((profile) => [profile.id, profile])),
     [profiles]
   );
+
+  const materialStockBalances = useMemo<MaterialStockBalances>(() => {
+    const balances: MaterialStockBalances = {};
+    for (const transaction of inventoryTransactions) {
+      if (!transaction.location_id) continue;
+      const key = materialStockKey(transaction.location_id, transaction.inventory_item_id);
+      balances[key] = Number(balances[key] ?? 0) + Number(transaction.quantity ?? 0);
+    }
+    return balances;
+  }, [inventoryTransactions]);
 
   const assignmentMap = useMemo(() => {
     const map = new Map<string, DbAssignment[]>();
@@ -258,7 +287,9 @@ export default function WorkOrdersPage() {
       .filter(
         (assignment) =>
           assignment.assignment_role === "primary" &&
-          assignment.assignment_status !== "declined"
+          ["assigned", "accepted", "completed"].includes(
+            assignment.assignment_status
+          )
       )
       .sort((a, b) => {
         const aTime = a.assigned_at
@@ -285,10 +316,10 @@ export default function WorkOrdersPage() {
       : [];
 
   const selectedOrderIsAssigned =
-    selectedOrderPrimaryAssignment !== null;
+    selectedOrderDisplayAssignment !== null;
 
   const selectedOrderDispatchDate =
-    selectedOrderPrimaryAssignment?.scheduled_start ??
+    selectedOrderDisplayAssignment?.scheduled_start ??
     selectedOrder?.scheduled_start ??
     null;
 
@@ -300,9 +331,9 @@ export default function WorkOrdersPage() {
             )}`
           : ""
       }${
-        selectedOrderPrimaryAssignment?.technician_id
+        selectedOrderDisplayAssignment?.technician_id
           ? `&tech=${encodeURIComponent(
-              selectedOrderPrimaryAssignment.technician_id
+              selectedOrderDisplayAssignment.technician_id
             )}`
           : ""
       }`
@@ -310,6 +341,10 @@ export default function WorkOrdersPage() {
 
   const selectedOrderTimeEntries = selectedOrder
     ? timeEntries.filter((entry) => entry.work_order_id === selectedOrder.id)
+    : [];
+
+  const selectedOrderMaterialUsages = selectedOrder
+    ? materialUsages.filter((usage) => usage.work_order_id === selectedOrder.id)
     : [];
 
   const editingTimeEntry = editingTimeEntryId
@@ -416,6 +451,13 @@ export default function WorkOrdersPage() {
   const canRecoverBilling =
     isAdmin ||
     currentUserRoles.has("manager") ||
+    currentUserRoles.has("billing");
+  const canManageMaterials =
+    isAdmin ||
+    currentUserRoles.has("manager") ||
+    currentUserRoles.has("dispatcher") ||
+    currentUserRoles.has("technician") ||
+    currentUserRoles.has("inventory") ||
     currentUserRoles.has("billing");
 
   function technicianAvailabilityForWindow(
@@ -726,6 +768,11 @@ export default function WorkOrdersPage() {
       profilesResult,
       rolesResult,
       timeEntriesResult,
+      inventoryItemsResult,
+      inventoryLocationsResult,
+      materialUsagesResult,
+      inventoryTransactionsResult,
+      rateDefaultsResult,
     ] = await Promise.all([
       supabase.from("work_orders").select("*").order("requested_at", { ascending: false }),
       supabase.from("customers").select("id,name").order("name"),
@@ -740,6 +787,11 @@ export default function WorkOrdersPage() {
         .from("time_entries")
         .select("id,work_order_id,technician_id,assignment_id,started_at,ended_at,duration_minutes,activity_type,billable,billing_rate,pay_rate,approval_status,ended_reason")
         .order("started_at", { ascending: false }),
+      supabase.from("inventory_items").select("id,name,sku,unit,unit_cost,unit_price,track_stock,active").eq("active", true).order("name"),
+      supabase.from("inventory_locations").select("id,name,location_type,active").eq("active", true).order("name"),
+      supabase.from("material_usage").select("id,work_order_id,inventory_item_id,description,quantity,quantity_returned,unit_cost,unit_price,billable,recorded_by,created_at").order("created_at", { ascending: false }),
+      supabase.from("inventory_transactions").select("inventory_item_id,location_id,quantity"),
+      supabase.from("fieldops_settings").select("default_customer_billing_rate,default_technician_pay_rate").eq("id", 1).maybeSingle(),
     ]);
 
     const firstError =
@@ -749,7 +801,12 @@ export default function WorkOrdersPage() {
       assignmentsResult.error ??
       profilesResult.error ??
       rolesResult.error ??
-      timeEntriesResult.error;
+      timeEntriesResult.error ??
+      inventoryItemsResult.error ??
+      inventoryLocationsResult.error ??
+      materialUsagesResult.error ??
+      inventoryTransactionsResult.error ??
+      rateDefaultsResult.error;
 
     if (firstError) {
       setError(firstError.message);
@@ -764,6 +821,11 @@ export default function WorkOrdersPage() {
     setProfiles((profilesResult.data ?? []) as DbProfile[]);
     setRoles((rolesResult.data ?? []) as DbRole[]);
     setTimeEntries((timeEntriesResult.data ?? []) as DbTimeEntry[]);
+    setInventoryItems((inventoryItemsResult.data ?? []) as DbInventoryItem[]);
+    setInventoryLocations((inventoryLocationsResult.data ?? []) as DbInventoryLocation[]);
+    setMaterialUsages((materialUsagesResult.data ?? []) as DbMaterialUsage[]);
+    setInventoryTransactions((inventoryTransactionsResult.data ?? []) as DbInventoryTransaction[]);
+    setRateDefaults((rateDefaultsResult.data ?? { default_customer_billing_rate: 0, default_technician_pay_rate: 0 }) as DbRateDefaults);
     setLoading(false);
   }, [supabase]);
 
@@ -771,7 +833,7 @@ export default function WorkOrdersPage() {
     async (workOrderId: string) => {
       setDetailsLoading(true);
 
-      const [eventsResult, notesResult] = await Promise.all([
+      const [eventsResult, notesResult, correctionsResult] = await Promise.all([
         supabase
           .from("work_order_events")
           .select("id,work_order_id,event_type,old_status,new_status,details,created_at")
@@ -782,13 +844,19 @@ export default function WorkOrdersPage() {
           .select("id,work_order_id,note,visibility,created_by,created_at")
           .eq("work_order_id", workOrderId)
           .order("created_at", { ascending: false }),
+        supabase
+          .from("time_entry_corrections")
+          .select("id,time_entry_id,work_order_id,technician_id,operation,original_values,corrected_values,reason,corrected_by,corrected_at")
+          .eq("work_order_id", workOrderId)
+          .order("corrected_at", { ascending: false }),
       ]);
 
-      if (eventsResult.error || notesResult.error) {
-        setStatusError(eventsResult.error?.message ?? notesResult.error?.message ?? "Unable to load work-order details.");
+      if (eventsResult.error || notesResult.error || correctionsResult.error) {
+        setStatusError(eventsResult.error?.message ?? notesResult.error?.message ?? correctionsResult.error?.message ?? "Unable to load work-order details.");
       } else {
         setEvents((eventsResult.data ?? []) as DbEvent[]);
         setNotes((notesResult.data ?? []) as DbNote[]);
+        setTimeCorrections((correctionsResult.data ?? []) as DbTimeCorrection[]);
       }
 
       setDetailsLoading(false);
@@ -824,6 +892,28 @@ export default function WorkOrdersPage() {
   useEffect(() => {
     void loadOrders();
   }, [loadOrders]);
+  useEffect(() => {
+    if (loading || orders.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const focusId = params.get("focus");
+    if (!focusId) return;
+    const target = orders.find((order) => order.id === focusId);
+    if (!target) return;
+    setSelectedOrderId(target.id);
+    setDetailTab("overview");
+    setDraftStatus(target.status as WorkOrderStatus);
+    setStatusError(null);
+    if (params.get("time") === "1" && canCorrectTime) {
+      // Keep the Work Order overview visible so the admin can see the whole
+      // technician timeline and choose the exact segment to correct.
+      showActionNotice("info", "Opened from Dispatch. Use Correct beside the affected segment; FieldOps will identify any previous/next conflict and where to start.");
+    }
+    const clean = new URL(window.location.href);
+    clean.searchParams.delete("focus");
+    clean.searchParams.delete("time");
+    window.history.replaceState({}, "", `${clean.pathname}${clean.search}${clean.hash}`);
+  }, [loading, orders, canCorrectTime]);
+
 
   useEffect(() => {
     if (!selectedOrderId) return;
@@ -853,6 +943,11 @@ export default function WorkOrdersPage() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "time_entries" },
+        () => void loadOrders()
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "material_usage" },
         () => void loadOrders()
       )
       .on(
@@ -1221,8 +1316,8 @@ export default function WorkOrdersPage() {
           : dateTimeLocalInputFromIso(endIso),
       activityType: presetActivity,
       billable: presetActivity !== "break",
-      billingRate: "",
-      payRate: "",
+      billingRate: String(rateDefaults.default_customer_billing_rate ?? 0),
+      payRate: String(rateDefaults.default_technician_pay_rate ?? 0),
       reason: "",
     });
     setTimeEditorOpen(true);
@@ -1336,6 +1431,29 @@ export default function WorkOrdersPage() {
     ) {
       failTime(
         "Billing and pay rates must be valid non-negative numbers."
+      );
+      return;
+    }
+
+    const proposedEndMs = end ? end.getTime() : Number.POSITIVE_INFINITY;
+    const conflictingEntry = timeEntries
+      .filter((entry) => entry.technician_id === timeEditorForm.technicianId && entry.id !== editingTimeEntryId)
+      .map((entry) => ({
+        entry,
+        startMs: new Date(entry.started_at).getTime(),
+        endMs: entry.ended_at ? new Date(entry.ended_at).getTime() : Number.POSITIVE_INFINITY,
+      }))
+      .filter(({ startMs, endMs }) => start.getTime() < endMs && proposedEndMs > startMs)
+      .sort((a, b) => a.startMs - b.startMs)[0];
+
+    if (conflictingEntry) {
+      const conflictOrder = orders.find((order) => order.id === conflictingEntry.entry.work_order_id);
+      const conflictLabel = `${conflictOrder?.work_order_number ?? "another Work Order"} · ${statusLabel(conflictingEntry.entry.activity_type)}`;
+      const conflictWindow = `${formatLocalDateTime24(conflictingEntry.entry.started_at)} → ${conflictingEntry.entry.ended_at ? formatLocalDateTime24(conflictingEntry.entry.ended_at) : "ACTIVE"}`;
+      const isPrevious = conflictingEntry.startMs <= start.getTime();
+      failTime(
+        `This change overlaps ${isPrevious ? "the previous" : "the next"} segment ${conflictLabel} (${conflictWindow}). ` +
+        `Correct the ${isPrevious ? "END" : "START"} of that segment first, then return to this time entry.`
       );
       return;
     }
@@ -1473,6 +1591,65 @@ export default function WorkOrdersPage() {
     }
   }
 
+  function openMaterialModal() {
+    if (!selectedOrder || !canManageMaterials) return;
+    const location = inventoryLocations[0] ?? null;
+    setMaterialError(null);
+    setMaterialForm({ locationId: location?.id ?? "", selectedItems: [], activeInventoryItemId: "", notes: "" });
+    setMaterialOpen(true);
+  }
+
+  async function saveMaterial() {
+    if (!selectedOrder || !canManageMaterials) return;
+    if (!materialForm.locationId) { setMaterialError("Choose the stock location the materials are coming from."); return; }
+    if (materialForm.selectedItems.length === 0) { setMaterialError("Select at least one inventory item."); return; }
+    const payload = materialForm.selectedItems.map(line => ({ inventory_item_id:line.inventoryItemId, location_id:line.locationId, quantity:Number(line.quantity), unit_price:Number(line.unitPrice), billable:line.billable }));
+    if (payload.some(line => !line.inventory_item_id || !line.location_id || !Number.isFinite(line.quantity) || line.quantity<=0 || !Number.isFinite(line.unit_price) || line.unit_price<0)) { setMaterialError("Every selected item needs a quantity greater than zero and a valid non-negative client unit price."); return; }
+    setSavingMaterial(true); setMaterialError(null);
+    const {error:rpcError}=await supabase.rpc("fieldops_add_work_order_materials",{p_work_order_id:selectedOrder.id,p_location_id:materialForm.locationId,p_items:payload,p_notes:materialForm.notes.trim()||null});
+    setSavingMaterial(false);
+    if(rpcError){setMaterialError(rpcError.message);showActionNotice("error",`Material failed: ${rpcError.message}`);return;}
+    setMaterialOpen(false); await loadOrders(); await loadDetails(selectedOrder.id); showActionNotice("success",`${payload.length} inventory item${payload.length===1?"":"s"} consumed and added to the Work Order.`);
+  }
+
+  function openReturnMaterialModal(usage: DbMaterialUsage) {
+    if (!canManageMaterials) return;
+    const remaining = Math.max(0, Number(usage.quantity) - Number(usage.quantity_returned || 0));
+    setReturnMaterialUsage(usage);
+    setReturnMaterialError(null);
+    setReturnMaterialForm({
+      locationId: inventoryLocations[0]?.id ?? "",
+      quantity: String(remaining || 1),
+      reason: "",
+    });
+    setReturnMaterialOpen(true);
+  }
+
+  async function saveMaterialReturn() {
+    if (!returnMaterialUsage || !canManageMaterials) return;
+    const quantity = Number(returnMaterialForm.quantity);
+    const remaining = Math.max(0, Number(returnMaterialUsage.quantity) - Number(returnMaterialUsage.quantity_returned || 0));
+    if (!returnMaterialForm.locationId) { setReturnMaterialError("Choose the location receiving the returned stock."); return; }
+    if (!Number.isFinite(quantity) || quantity <= 0 || quantity > remaining) { setReturnMaterialError(`Return quantity must be greater than zero and no more than ${remaining}.`); return; }
+    if (returnMaterialForm.reason.trim().length < 3) { setReturnMaterialError("Enter a return reason of at least 3 characters."); return; }
+
+    setSavingMaterialReturn(true);
+    setReturnMaterialError(null);
+    const { error: rpcError } = await supabase.rpc("fieldops_return_work_order_material", {
+      p_material_usage_id: returnMaterialUsage.id,
+      p_quantity: quantity,
+      p_location_id: returnMaterialForm.locationId,
+      p_reason: returnMaterialForm.reason.trim(),
+    });
+    setSavingMaterialReturn(false);
+    if (rpcError) { setReturnMaterialError(rpcError.message); showActionNotice("error", `Material return failed: ${rpcError.message}`); return; }
+    setReturnMaterialOpen(false);
+    setReturnMaterialUsage(null);
+    await loadOrders();
+    if (selectedOrder) await loadDetails(selectedOrder.id);
+    showActionNotice("success", "Material returned to Inventory and the net billable quantity was updated.");
+  }
+
   function openBillingRecovery() {
     if (!selectedOrder || !canRecoverBilling) return;
     setBillingRecoveryReason("");
@@ -1604,6 +1781,7 @@ export default function WorkOrdersPage() {
       scheduleDate: dateInputFromIso(selectedOrder.scheduled_start),
       startTime: timeInputFromIso(selectedOrder.scheduled_start),
       endTime: timeInputFromIso(selectedOrder.scheduled_end),
+      travelDistanceKm: String(Number(selectedOrder.travel_distance_km || 0)),
     });
     setEditMode(true);
   }
@@ -1648,6 +1826,12 @@ export default function WorkOrdersPage() {
       scheduledEnd = end.toISOString();
     }
 
+    const travelDistanceKm = Number(editForm.travelDistanceKm || "0");
+    if (!Number.isFinite(travelDistanceKm) || travelDistanceKm < 0) {
+      setStatusError("Travel distance must be a non-negative number.");
+      return;
+    }
+
     setSavingEdit(true);
     setStatusError(null);
 
@@ -1661,6 +1845,7 @@ export default function WorkOrdersPage() {
         service_area: editForm.serviceArea.trim() || null,
         scheduled_start: scheduledStart,
         scheduled_end: scheduledEnd,
+        travel_distance_km: travelDistanceKm,
       })
       .eq("id", selectedOrder.id);
 
@@ -2073,7 +2258,7 @@ requested, planned, assigned, travelling, on_site, working, waiting, finished, b
     );
 
     try {
-      const { error: transitionError } =
+      const { data: transitionResult, error: transitionError } =
         await supabase.rpc(
           "fieldops_transition_work_order_status",
           {
@@ -2094,11 +2279,17 @@ requested, planned, assigned, travelling, on_site, working, waiting, finished, b
       await loadOrders();
       await loadDetails(orderId);
 
+      const autoBillingReady =
+        transitionResult &&
+        typeof transitionResult === "object" &&
+        "auto_billing_ready" in transitionResult &&
+        transitionResult.auto_billing_ready === true;
+
       showActionNotice(
         "success",
-        `Status updated: ${statusLabel(
-          previousStatus
-        )} → ${statusLabel(nextStatus)}.`
+        autoBillingReady
+          ? `Field work finished. ${selectedOrder.work_order_number} moved to Billing Ready automatically.`
+          : `Status updated: ${statusLabel(previousStatus)} → ${statusLabel(nextStatus)}.`
       );
     } catch (error) {
       const message =
@@ -2258,15 +2449,7 @@ requested, planned, assigned, travelling, on_site, working, waiting, finished, b
         />
       )}
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-border bg-sidebar xl:flex">
-        <div className="flex h-[72px] items-center gap-3 border-b border-border px-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <Wrench className="h-5 w-5" />
-          </div>
-          <div>
-            <div className="font-bold">FieldOps</div>
-            <div className="text-xs text-muted-foreground">Service Operations</div>
-          </div>
-        </div>
+        <CompanyBrand className="h-[72px] border-b border-border px-4" />
 
         <nav className="flex-1 space-y-1 p-3">
           {navigation.map((item) => {
@@ -2624,6 +2807,8 @@ requested, planned, assigned, travelling, on_site, working, waiting, finished, b
           profileMap={profileMap}
           canCorrectTime={canCorrectTime}
           canRecoverBilling={canRecoverBilling}
+          canManageMaterials={canManageMaterials}
+          selectedOrderMaterialUsages={selectedOrderMaterialUsages}
           isAdmin={isAdmin}
           selectedOrderIsAssigned={selectedOrderIsAssigned}
           detailTab={detailTab}
@@ -2658,6 +2843,8 @@ requested, planned, assigned, travelling, on_site, working, waiting, finished, b
           onSaveEdit={() => void saveEdit()}
           onAddTime={openAddTimeEditor}
           onCorrectTime={openCorrectTimeEditor}
+          onAddMaterial={() => openMaterialModal()}
+          onReturnMaterial={(usage) => openReturnMaterialModal(usage)}
           onAddNote={() => void addNote()}
         />
       )}
@@ -2696,10 +2883,40 @@ requested, planned, assigned, travelling, on_site, working, waiting, finished, b
           timeEditorRecordedMinutes={timeEditorRecordedMinutes}
           timeEditorActualMinutes={timeEditorActualMinutes}
           timeEditorVariance={timeEditorVariance}
+          timeCorrections={timeCorrections}
+          profileMap={profileMap}
+          defaultCustomerBillingRate={rateDefaults.default_customer_billing_rate}
+          defaultTechnicianPayRate={rateDefaults.default_technician_pay_rate}
           onClose={() => setTimeEditorOpen(false)}
           onSave={() => void saveTimeEditor()}
         />
       )}
+      {selectedOrder && (
+        <WorkOrderMaterialModal
+          open={materialOpen}
+          workOrderNumber={selectedOrder.work_order_number}
+          items={inventoryItems}
+          locations={inventoryLocations}
+          stockBalances={materialStockBalances}
+          form={materialForm}
+          error={materialError}
+          saving={savingMaterial}
+          onChange={setMaterialForm}
+          onClose={() => setMaterialOpen(false)}
+          onSave={() => void saveMaterial()}
+        />
+      )}
+      <WorkOrderMaterialReturnModal
+        open={returnMaterialOpen}
+        usage={returnMaterialUsage as WorkOrderMaterialUsage | null}
+        locations={inventoryLocations}
+        form={returnMaterialForm}
+        error={returnMaterialError}
+        saving={savingMaterialReturn}
+        onChange={setReturnMaterialForm}
+        onClose={() => setReturnMaterialOpen(false)}
+        onSave={() => void saveMaterialReturn()}
+      />
       {billingRecoveryOpen && selectedOrder && (
         <BillingRecoveryModal
           selectedOrder={selectedOrder}

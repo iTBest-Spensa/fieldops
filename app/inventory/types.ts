@@ -253,6 +253,27 @@ export type InventoryItemSnapshot = {
   value: number;
   locationCount: number;
   lastMovementAt: string | null;
+  scopeLocationId?: string | null;
+  scopeLocationName?: string | null;
+};
+
+
+
+export type InventoryLocationItemHealth = {
+  location: DbInventoryLocation;
+  item: DbInventoryItem;
+  onHand: number;
+  stockStatus: "ok" | "low" | "out";
+  value: number;
+};
+
+export type InventoryLocationHealthSummary = {
+  location: DbInventoryLocation;
+  totalItems: number;
+  lowStock: number;
+  outOfStock: number;
+  healthy: number;
+  inventoryValue: number;
 };
 
 export type InventoryItemForm = {

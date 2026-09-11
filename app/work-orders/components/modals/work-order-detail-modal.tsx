@@ -1,6 +1,6 @@
 import { CheckCircle2, FileText, ReceiptText, Truck, UserRound, X } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
-import type { DbAssignment, DbCustomer, DbEvent, DbNote, DbProfile, DbSite, DbTimeEntry, DbWorkOrder, EditWorkOrderForm, WorkOrderStatus } from "../../types";
+import type { DbAssignment, DbCustomer, DbEvent, DbMaterialUsage, DbNote, DbProfile, DbSite, DbTimeEntry, DbWorkOrder, EditWorkOrderForm, WorkOrderStatus } from "../../types";
 import { allowedNormalWorkOrderTransitions, isTerminalWorkOrderStatus, priorityTone, statusLabel, statusTone } from "../../utils";
 import { EditWorkOrderPanel } from "../edit-work-order-panel";
 import { WorkOrderOverview } from "../work-order-overview";
@@ -11,16 +11,16 @@ type Props = {
   selectedOrder: DbWorkOrder; customerMap: Map<string, DbCustomer>; siteMap: Map<string, DbSite>;
   selectedOrderDisplayAssignments: DbAssignment[]; selectedOrderDisplayAssignment: DbAssignment | null;
   selectedOrderTimeEntries: DbTimeEntry[]; localNowMs: number | null; profileMap: Map<string, DbProfile>;
-  canCorrectTime: boolean; canRecoverBilling: boolean; isAdmin: boolean; selectedOrderIsAssigned: boolean;
+  canCorrectTime: boolean; canRecoverBilling: boolean; canManageMaterials: boolean; selectedOrderMaterialUsages: DbMaterialUsage[]; isAdmin: boolean; selectedOrderIsAssigned: boolean;
   detailTab: "overview" | "activity" | "notes"; setDetailTab: Dispatch<SetStateAction<"overview" | "activity" | "notes">>;
   draftStatus: WorkOrderStatus; setDraftStatus: Dispatch<SetStateAction<WorkOrderStatus>>; savingStatus: boolean; statusError: string | null;
   editMode: boolean; editForm: EditWorkOrderForm | null; setEditMode: Dispatch<SetStateAction<boolean>>; setEditForm: Dispatch<SetStateAction<EditWorkOrderForm | null>>; savingEdit: boolean; setStatusError: Dispatch<SetStateAction<string | null>>;
   events: DbEvent[]; detailsLoading: boolean; notes: DbNote[]; noteText: string; setNoteText: Dispatch<SetStateAction<string>>; noteVisibility: "internal" | "customer"; setNoteVisibility: Dispatch<SetStateAction<"internal" | "customer">>; savingNote: boolean;
-  onClose: () => void; onBeginEdit: () => void; onOpenAssignTechnician: () => void; onOpenInDispatch: () => void; onOpenBillingRecovery: () => void; onWaiveBilling: () => void; onAdminOverride: () => void; onCloseWorkOrder: () => void; onSaveStatus: () => void; onSaveEdit: () => void; onAddTime: (presetActivity?: "work" | "break") => void; onCorrectTime: (entry: DbTimeEntry) => void; onAddNote: () => void;
+  onClose: () => void; onBeginEdit: () => void; onOpenAssignTechnician: () => void; onOpenInDispatch: () => void; onOpenBillingRecovery: () => void; onWaiveBilling: () => void; onAdminOverride: () => void; onCloseWorkOrder: () => void; onSaveStatus: () => void; onSaveEdit: () => void; onAddTime: (presetActivity?: "work" | "break") => void; onCorrectTime: (entry: DbTimeEntry) => void; onAddMaterial: () => void; onReturnMaterial: (usage: DbMaterialUsage) => void; onAddNote: () => void;
 };
 
 export function WorkOrderDetailModal(props: Props) {
-  const { selectedOrder, customerMap, siteMap, selectedOrderDisplayAssignments, selectedOrderDisplayAssignment, selectedOrderTimeEntries, localNowMs, profileMap, canCorrectTime, canRecoverBilling, isAdmin, selectedOrderIsAssigned, detailTab, setDetailTab, draftStatus, setDraftStatus, savingStatus, statusError, editMode, editForm, setEditMode, setEditForm, savingEdit, setStatusError, events, detailsLoading, notes, noteText, setNoteText, noteVisibility, setNoteVisibility, savingNote, onClose, onBeginEdit, onOpenAssignTechnician, onOpenInDispatch, onOpenBillingRecovery, onWaiveBilling, onAdminOverride, onCloseWorkOrder, onSaveStatus, onSaveEdit, onAddTime, onCorrectTime, onAddNote } = props;
+  const { selectedOrder, customerMap, siteMap, selectedOrderDisplayAssignments, selectedOrderDisplayAssignment, selectedOrderTimeEntries, localNowMs, profileMap, canCorrectTime, canRecoverBilling, canManageMaterials, selectedOrderMaterialUsages, isAdmin, selectedOrderIsAssigned, detailTab, setDetailTab, draftStatus, setDraftStatus, savingStatus, statusError, editMode, editForm, setEditMode, setEditForm, savingEdit, setStatusError, events, detailsLoading, notes, noteText, setNoteText, noteVisibility, setNoteVisibility, savingNote, onClose, onBeginEdit, onOpenAssignTechnician, onOpenInDispatch, onOpenBillingRecovery, onWaiveBilling, onAdminOverride, onCloseWorkOrder, onSaveStatus, onSaveEdit, onAddTime, onCorrectTime, onAddMaterial, onReturnMaterial, onAddNote } = props;
   return (
     <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4">
       <button
@@ -39,14 +39,14 @@ export function WorkOrderDetailModal(props: Props) {
             <h2 className="mt-1 text-xl font-bold">{selectedOrder.title}</h2>
             <div className="mt-2 flex flex-wrap gap-2">
               <span
-                className={`border px-2 py-1 text-[9px] font-black rounded-none ${statusTone(
+                className={`border px-2 py-1 text-[9px] font-black rounded-lg ${statusTone(
                   selectedOrder.status
                 )}`}
               >
                 {statusLabel(selectedOrder.status)}
               </span>
               <span
-                className={`border px-2 py-1 text-[9px] font-black rounded-none ${priorityTone(
+                className={`border px-2 py-1 text-[9px] font-black rounded-lg ${priorityTone(
                   selectedOrder.priority
                 )}`}
               >
@@ -59,7 +59,7 @@ export function WorkOrderDetailModal(props: Props) {
             <button
               type="button"
               onClick={onBeginEdit}
-              className="inline-flex h-9 items-center gap-2 border border-border px-3 text-xs font-bold hover:bg-muted"
+              className="inline-flex h-9 items-center gap-2 rounded-xl border border-border px-3 text-xs font-bold hover:bg-muted"
             >
               <FileText className="h-3.5 w-3.5" />
               Edit
@@ -69,7 +69,7 @@ export function WorkOrderDetailModal(props: Props) {
               <button
                 type="button"
                 onClick={onOpenAssignTechnician}
-                className="inline-flex h-9 items-center gap-2 border border-primary/40 bg-primary/[0.06] px-3 text-xs font-bold text-primary hover:bg-primary/10"
+                className="inline-flex h-9 items-center gap-2 rounded-xl border border-primary/40 bg-primary/[0.06] px-3 text-xs font-bold text-primary hover:bg-primary/10"
               >
                 <UserRound className="h-3.5 w-3.5" />
                 Assign Technician
@@ -79,10 +79,10 @@ export function WorkOrderDetailModal(props: Props) {
             <button
               type="button"
               onClick={onOpenInDispatch}
-              className="inline-flex h-9 items-center gap-2 border border-border px-3 text-xs font-bold hover:bg-muted"
+              className="inline-flex h-9 items-center gap-2 rounded-xl border border-border px-3 text-xs font-bold hover:bg-muted"
             >
               <Truck className="h-3.5 w-3.5" />
-              {selectedOrderIsAssigned ? "Locate in Dispatch" : "Dispatch Job"}
+              {selectedOrderIsAssigned ? (isTerminalWorkOrderStatus(selectedOrder.status) ? "View in Dispatch" : "Locate in Dispatch") : "Dispatch Job"}
             </button>
 
             {canRecoverBilling &&
@@ -93,7 +93,7 @@ export function WorkOrderDetailModal(props: Props) {
                 <button
                   type="button"
                   onClick={onOpenBillingRecovery}
-                  className="inline-flex h-9 items-center gap-2 border border-cyan-500/40 bg-cyan-500/10 px-3 text-xs font-bold text-cyan-600 hover:bg-cyan-500/15 dark:text-cyan-400"
+                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-3 text-xs font-bold text-cyan-600 hover:bg-cyan-500/15 dark:text-cyan-400"
                 >
                   <ReceiptText className="h-3.5 w-3.5" />
                   Recover Billing
@@ -106,7 +106,7 @@ export function WorkOrderDetailModal(props: Props) {
                 <button
                   type="button"
                   onClick={onWaiveBilling}
-                  className="inline-flex h-9 items-center gap-2 border border-amber-500/40 bg-amber-500/10 px-3 text-xs font-bold text-amber-700 hover:bg-amber-500/15 dark:text-amber-300"
+                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 text-xs font-bold text-amber-700 hover:bg-amber-500/15 dark:text-amber-300"
                 >
                   <ReceiptText className="h-3.5 w-3.5" />
                   Waive Billing / No Charge
@@ -118,7 +118,7 @@ export function WorkOrderDetailModal(props: Props) {
               disabled={selectedOrder.status !== "billing_ready" || !["billed", "waived"].includes(selectedOrder.billing_status ?? "not_billed") || savingStatus}
               onClick={onCloseWorkOrder}
               title={selectedOrder.status !== "billing_ready" ? "Work Order must reach Billing Ready first." : !["billed", "waived"].includes(selectedOrder.billing_status ?? "not_billed") ? "Invoice must be billed or Billing must be waived before closing." : "Close Work Order"}
-              className="inline-flex h-9 items-center gap-2 border border-rose-500/40 px-3 text-xs font-bold text-rose-500 hover:bg-rose-500/10 disabled:opacity-40"
+              className="inline-flex h-9 items-center gap-2 rounded-xl border border-rose-500/40 px-3 text-xs font-bold text-rose-500 hover:bg-rose-500/10 disabled:opacity-40"
             >
               <CheckCircle2 className="h-3.5 w-3.5" />
               Close Work Order
@@ -141,7 +141,7 @@ export function WorkOrderDetailModal(props: Props) {
                 key={tab}
                 type="button"
                 onClick={() => setDetailTab(tab)}
-                className={`border px-4 py-2 text-sm font-bold rounded-none ${
+                className={`border px-4 py-2 text-sm font-bold rounded-xl ${
                   detailTab === tab
                     ? "border-primary bg-primary text-primary-foreground"
                     : "border-border bg-card"
@@ -153,38 +153,36 @@ export function WorkOrderDetailModal(props: Props) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={draftStatus}
-              onChange={(event) =>
-                setDraftStatus(event.target.value as WorkOrderStatus)
-              }
-              className="h-10 border border-border bg-card px-3 text-sm font-semibold outline-none focus:border-primary"
-            >
-              {[selectedOrder.status, ...allowedNormalWorkOrderTransitions(selectedOrder.status)]
-                .filter((status, index, values) => values.indexOf(status) === index)
-                .map((status) => (
-                  <option key={status} value={status}>
-                    {statusLabel(status)}
-                  </option>
-                ))}
-            </select>
-
-            <button
-              type="button"
-              disabled={savingStatus || draftStatus === selectedOrder.status}
-              onClick={onSaveStatus}
-              className="h-10 bg-primary px-4 text-sm font-bold text-primary-foreground disabled:opacity-40"
-            >
-              {savingStatus ? "Saving…" : "Update Status"}
-            </button>
+            {!isTerminalWorkOrderStatus(selectedOrder.status) ? (
+              <>
+                <select
+                  value={draftStatus}
+                  onChange={(event) => setDraftStatus(event.target.value as WorkOrderStatus)}
+                  className="h-10 rounded-xl border border-border bg-card px-3 text-sm font-semibold outline-none focus:border-primary"
+                >
+                  {[selectedOrder.status, ...allowedNormalWorkOrderTransitions(selectedOrder.status)]
+                    .filter((status, index, values) => values.indexOf(status) === index)
+                    .map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}
+                </select>
+                <button
+                  type="button"
+                  disabled={savingStatus || draftStatus === selectedOrder.status}
+                  onClick={onSaveStatus}
+                  className="h-10 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground disabled:opacity-40"
+                >
+                  {savingStatus ? "Saving…" : "Update Status"}
+                </button>
+              </>
+            ) : (
+              <div className="rounded-xl border border-primary/25 bg-primary/[0.05] px-3 py-2 text-xs font-semibold text-muted-foreground">
+                {selectedOrder.status === "billing_ready"
+                  ? "Field work is finished and this Work Order was handed to Billing automatically."
+                  : `Operational status: ${statusLabel(selectedOrder.status)}`}
+              </div>
+            )}
 
             {isAdmin && (
-              <button
-                type="button"
-                disabled={savingStatus}
-                onClick={onAdminOverride}
-                className="h-10 border border-amber-500/40 px-3 text-xs font-black text-amber-700 hover:bg-amber-500/10 dark:text-amber-300"
-              >
+              <button type="button" disabled={savingStatus} onClick={onAdminOverride} className="h-10 rounded-xl border border-amber-500/40 px-3 text-xs font-black text-amber-700 hover:bg-amber-500/10 dark:text-amber-300">
                 Admin Override
               </button>
             )}
@@ -192,7 +190,7 @@ export function WorkOrderDetailModal(props: Props) {
         </div>
 
         {statusError && (
-          <div className="mx-5 mt-4 border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-500">
+          <div className="mx-5 mt-4 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-500">
             {statusError}
           </div>
         )}
@@ -225,6 +223,10 @@ export function WorkOrderDetailModal(props: Props) {
                 profileMap={profileMap}
                 canCorrectTime={canCorrectTime}
                 canRecoverBilling={canRecoverBilling}
+                materialUsages={selectedOrderMaterialUsages}
+                canManageMaterials={canManageMaterials}
+                onAddMaterial={onAddMaterial}
+                onReturnMaterial={onReturnMaterial}
                 onAddTime={onAddTime}
                 onCorrectTime={onCorrectTime}
                 onRecoverBilling={onOpenBillingRecovery}

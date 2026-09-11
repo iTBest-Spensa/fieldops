@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { BarChart3, Bell, Boxes, Building2, ClipboardList, LayoutDashboard, Package, ReceiptText, Search, Settings as SettingsIcon, Truck, Users } from "lucide-react";
 import { FieldOpsThemeToggle } from "@/components/fieldops-theme-toggle";
+import { CompanyBrand } from "@/components/company-brand";
 import { createClient } from "@/lib/supabase/client";
 import type { AccessUser, DbProfile, DbRole, DbSettings, DbSettingsAudit, SettingsForm, SettingsSection } from "./types";
 import { emptySettingsForm } from "./constants";
@@ -32,7 +33,7 @@ const navigation = [
   { label: "Settings", icon: SettingsIcon, href: "/settings", active: true },
 ];
 
-const settingsSelect = "id,company_name,legal_name,business_number,phone,email,website,address1,address2,city,province_state,postal_code,country,timezone,currency,locale,date_format,time_format,default_work_order_duration_minutes,default_payment_terms_days,default_tax_rate,invoice_footer,po_approval_required,low_stock_monitoring_enabled,reconciliation_reason_required,certification_alert_days,asset_warranty_alert_days,unassigned_work_order_alert_enabled,overdue_invoice_alert_enabled,updated_by,created_at,updated_at";
+const settingsSelect = "id,company_name,legal_name,logo_path,business_number,phone,email,website,address1,address2,city,province_state,postal_code,country,timezone,currency,locale,date_format,time_format,default_work_order_duration_minutes,default_payment_terms_days,default_tax_rate,default_customer_billing_rate,default_technician_pay_rate,minimum_billable_minutes,travel_billing_mode,travel_hourly_rate,travel_per_km_rate,invoice_footer,po_approval_required,low_stock_monitoring_enabled,reconciliation_reason_required,certification_alert_days,asset_warranty_alert_days,unassigned_work_order_alert_enabled,overdue_invoice_alert_enabled,updated_by,created_at,updated_at";
 
 export default function SettingsPage() {
   const supabase = useMemo(()=>createClient(),[]);
@@ -47,6 +48,8 @@ export default function SettingsPage() {
   const [authRequired,setAuthRequired]=useState(false);
   const [error,setError]=useState<string|null>(null);
   const [saving,setSaving]=useState(false);
+  const [logoBusy,setLogoBusy]=useState(false);
+  const [resettingDemo,setResettingDemo]=useState(false);
   const [notice,setNotice]=useState<ActionNoticeState>(null);
   const [roleUser,setRoleUser]=useState<AccessUser|null>(null);
   const [selectedRoles,setSelectedRoles]=useState<string[]>([]);
@@ -85,16 +88,68 @@ export default function SettingsPage() {
 
   async function saveSettings(){
     if(!canManageSettings){showNotice("error","Only an Admin or Manager can change system settings.");return;}
-    const duration=Number(form.defaultWorkOrderDurationMinutes), terms=Number(form.defaultPaymentTermsDays), tax=Number(form.defaultTaxRatePercent), certDays=Number(form.certificationAlertDays), warrantyDays=Number(form.assetWarrantyAlertDays);
+    const duration=Number(form.defaultWorkOrderDurationMinutes), terms=Number(form.defaultPaymentTermsDays), tax=Number(form.defaultTaxRatePercent), defaultCustomerBillingRate=Number(form.defaultCustomerBillingRate), defaultTechnicianPayRate=Number(form.defaultTechnicianPayRate), minimumMinutes=Number(form.minimumBillableMinutes), travelHourly=form.travelHourlyRate.trim()===""?null:Number(form.travelHourlyRate), travelPerKm=Number(form.travelPerKmRate), certDays=Number(form.certificationAlertDays), warrantyDays=Number(form.assetWarrantyAlertDays);
     if(!form.companyName.trim()){showNotice("error","Company display name is required.");return;}
     if(!Number.isFinite(duration)||duration<15||duration>1440){showNotice("error","Default work-order duration must be between 15 and 1440 minutes.");return;}
     if(!Number.isInteger(terms)||terms<0||terms>365){showNotice("error","Default payment terms must be 0 to 365 days.");return;}
     if(!Number.isFinite(tax)||tax<0||tax>100){showNotice("error","Default tax rate must be between 0 and 100%.");return;}
+    if(!Number.isFinite(defaultCustomerBillingRate)||defaultCustomerBillingRate<0){showNotice("error","Default customer billing rate must be a non-negative amount.");return;}
+    if(!Number.isFinite(defaultTechnicianPayRate)||defaultTechnicianPayRate<0){showNotice("error","Default technician pay rate must be a non-negative amount.");return;}
+    if(!Number.isInteger(minimumMinutes)||minimumMinutes<0||minimumMinutes>1440){showNotice("error","Minimum billable labour time must be a whole number between 0 and 1440 minutes.");return;}
+    if(travelHourly!==null&&(!Number.isFinite(travelHourly)||travelHourly<0)){showNotice("error","Travel hourly rate must be blank or a non-negative amount.");return;}
+    if(!Number.isFinite(travelPerKm)||travelPerKm<0){showNotice("error","Travel rate per km must be a non-negative amount.");return;}
     if(!Number.isInteger(certDays)||certDays<0||certDays>3650||!Number.isInteger(warrantyDays)||warrantyDays<0||warrantyDays>3650){showNotice("error","Warning windows must be whole numbers between 0 and 3650 days.");return;}
     setSaving(true); showNotice("info","Saving FieldOps settings…");
-    const payload={company_name:form.companyName.trim(),legal_name:cleanNullable(form.legalName),business_number:cleanNullable(form.businessNumber),phone:cleanNullable(form.phone),email:cleanNullable(form.email),website:cleanNullable(form.website),address1:cleanNullable(form.address1),address2:cleanNullable(form.address2),city:cleanNullable(form.city),province_state:cleanNullable(form.provinceState),postal_code:cleanNullable(form.postalCode),country:form.country.trim()||"Canada",timezone:form.timezone,currency:form.currency.toUpperCase(),locale:form.locale.trim()||"en-CA",date_format:form.dateFormat,time_format:form.timeFormat,default_work_order_duration_minutes:Math.round(duration),default_payment_terms_days:terms,default_tax_rate:tax/100,invoice_footer:cleanNullable(form.invoiceFooter),po_approval_required:form.poApprovalRequired,low_stock_monitoring_enabled:form.lowStockMonitoringEnabled,reconciliation_reason_required:form.reconciliationReasonRequired,certification_alert_days:certDays,asset_warranty_alert_days:warrantyDays,unassigned_work_order_alert_enabled:form.unassignedWorkOrderAlertEnabled,overdue_invoice_alert_enabled:form.overdueInvoiceAlertEnabled,updated_by:currentUserId};
+    const payload={company_name:form.companyName.trim(),legal_name:cleanNullable(form.legalName),logo_path:cleanNullable(form.logoPath),business_number:cleanNullable(form.businessNumber),phone:cleanNullable(form.phone),email:cleanNullable(form.email),website:cleanNullable(form.website),address1:cleanNullable(form.address1),address2:cleanNullable(form.address2),city:cleanNullable(form.city),province_state:cleanNullable(form.provinceState),postal_code:cleanNullable(form.postalCode),country:form.country.trim()||"Canada",timezone:form.timezone,currency:form.currency.toUpperCase(),locale:form.locale.trim()||"en-CA",date_format:form.dateFormat,time_format:form.timeFormat,default_work_order_duration_minutes:Math.round(duration),default_payment_terms_days:terms,default_tax_rate:tax/100,default_customer_billing_rate:defaultCustomerBillingRate,default_technician_pay_rate:defaultTechnicianPayRate,minimum_billable_minutes:minimumMinutes,travel_billing_mode:form.travelBillingMode,travel_hourly_rate:travelHourly,travel_per_km_rate:travelPerKm,invoice_footer:cleanNullable(form.invoiceFooter),po_approval_required:form.poApprovalRequired,low_stock_monitoring_enabled:form.lowStockMonitoringEnabled,reconciliation_reason_required:form.reconciliationReasonRequired,certification_alert_days:certDays,asset_warranty_alert_days:warrantyDays,unassigned_work_order_alert_enabled:form.unassignedWorkOrderAlertEnabled,overdue_invoice_alert_enabled:form.overdueInvoiceAlertEnabled,updated_by:currentUserId};
+    const previousLogoPath=settings?.logo_path ?? null;
     const {error:updateError}=await supabase.from("fieldops_settings").update(payload).eq("id",1);
-    setSaving(false); if(updateError){showNotice("error",updateError.message);return;} await loadData(); showNotice("success","FieldOps settings saved.");
+    setSaving(false);
+    if(updateError){showNotice("error",updateError.message);return;}
+    if(previousLogoPath && previousLogoPath !== cleanNullable(form.logoPath)){
+      void supabase.storage.from("company-branding").remove([previousLogoPath]);
+    }
+    await loadData();
+    showNotice("success","Company settings saved and branding updated.");
+  }
+
+  async function uploadCompanyLogo(file:File){
+    if(!canManageSettings){showNotice("error","Only an Admin or Manager can change company branding.");return;}
+    const allowed=["image/png","image/jpeg","image/webp"];
+    if(!allowed.includes(file.type)){showNotice("error","Logo must be PNG, JPG or WebP.");return;}
+    if(file.size>2*1024*1024){showNotice("error","Logo must be 2 MB or smaller.");return;}
+    const ext=file.type==="image/png"?"png":file.type==="image/webp"?"webp":"jpg";
+    const path=`company/logo-${Date.now()}.${ext}`;
+    setLogoBusy(true);
+    const {error:uploadError}=await supabase.storage.from("company-branding").upload(path,file,{cacheControl:"3600",upsert:false,contentType:file.type});
+    if(uploadError){setLogoBusy(false);showNotice("error",uploadError.message);return;}
+    const previousUnsaved=form.logoPath && form.logoPath !== (settings?.logo_path ?? "") ? form.logoPath : null;
+    if(previousUnsaved){void supabase.storage.from("company-branding").remove([previousUnsaved]);}
+    setForm(current=>({...current,logoPath:path}));
+    setLogoBusy(false);
+    showNotice("success","Logo uploaded. Save Company Settings to publish it.");
+  }
+
+  async function removeCompanyLogo(){
+    if(!canManageSettings)return;
+    if(form.logoPath && form.logoPath !== (settings?.logo_path ?? "")){
+      void supabase.storage.from("company-branding").remove([form.logoPath]);
+    }
+    setForm(current=>({...current,logoPath:""}));
+    showNotice("info","Logo removed from the preview. Save Company Settings to publish the change.");
+  }
+
+  async function resetItDemoData(){
+    if(!isAdmin){showNotice("error","Only an Admin can reset demo data.");return;}
+    const confirmed=window.confirm("This will permanently delete all current Work Orders, invoices, payments, customers, inventory, assets and technician operational data, then seed fresh IT-company demo data. Your login, Admin access and Company Settings will be kept. Continue?");
+    if(!confirmed)return;
+    setResettingDemo(true);
+    showNotice("info","Resetting operational data and loading fresh IT-company demo data…");
+    const {data:result,error:rpcError}=await supabase.rpc("fieldops_reset_it_demo_data");
+    setResettingDemo(false);
+    if(rpcError){showNotice("error",rpcError.message);return;}
+    await loadData();
+    const seeded=result as {customers?:number;inventory_items?:number;assets?:number;technicians?:number}|null;
+    showNotice("success",`Fresh IT demo data loaded: ${seeded?.customers ?? 0} customers, ${seeded?.inventory_items ?? 0} inventory items, ${seeded?.assets ?? 0} assets, ${seeded?.technicians ?? 0} technician profile(s). Work Orders and Billing are empty.`);
   }
 
   function openRoleEditor(user:AccessUser){setRoleUser(user);setSelectedRoles([...user.roles]);setRoleError(null);}
@@ -104,5 +159,5 @@ export default function SettingsPage() {
 
   if(authRequired)return <main className="min-h-screen bg-background p-8 text-foreground"><div className="mx-auto max-w-xl border border-border bg-card p-6"><h1 className="text-xl font-black">Sign in required</h1><p className="mt-2 text-sm text-muted-foreground">Sign in to FieldOps to open Settings.</p></div></main>;
 
-  return <main className="min-h-screen bg-background text-foreground"><ActionNotice notice={notice} onClose={()=>setNotice(null)}/><div className="grid min-h-screen grid-cols-[236px_1fr]"><aside className="border-r border-border bg-card"><div className="border-b border-border px-5 py-5"><div className="text-lg font-black">FieldOps</div><div className="text-xs text-muted-foreground">Service Operations</div></div><nav className="space-y-1 p-3">{navigation.map(item=>{const Icon=item.icon;return <Link key={item.label} href={item.href} className={`flex items-center gap-3 px-3 py-2.5 text-sm font-medium ${item.active?"bg-primary text-primary-foreground":"text-muted-foreground hover:bg-muted hover:text-foreground"}`}><Icon className="h-4 w-4"/>{item.label}</Link>;})}</nav></aside><section className="min-w-0"><header className="flex h-16 items-center justify-between border-b border-border bg-card px-6"><div className="flex h-10 w-[420px] items-center gap-2 border border-border px-3 text-sm text-muted-foreground"><Search className="h-4 w-4"/>Search settings, users, roles...</div><div className="flex items-center gap-2"><FieldOpsThemeToggle/><button className="flex h-10 w-10 items-center justify-center border border-border" aria-label="Notifications"><Bell className="h-4 w-4"/></button></div></header><div className="p-6"><div className="flex flex-wrap items-end justify-between gap-4"><div><div className="text-sm font-bold text-primary">Administration</div><h1 className="mt-1 text-3xl font-black">Settings</h1><p className="mt-2 max-w-3xl text-sm text-muted-foreground">Central business configuration, operational defaults, user access, appearance and settings audit.</p></div><div className="text-right"><div className="text-xs font-black uppercase text-muted-foreground">Your access</div><div className="mt-1 text-sm font-black">{currentRoles.length?currentRoles.map(r=>r.charAt(0).toUpperCase()+r.slice(1)).join(" · "):"No role"}</div></div></div>{error&&<div className="mt-5 border border-rose-500/40 bg-rose-500/10 p-4 text-sm font-semibold text-rose-700 dark:text-rose-200">{error}</div>}<div className="mt-6 overflow-hidden border border-border"><SettingsTabs value={section} onChange={setSection}/><div className="bg-background p-5">{loading?<div className="p-8 text-center text-sm text-muted-foreground">Loading settings…</div>:section==="company"?<CompanyPanel form={form} disabled={!canManageSettings} saving={saving} onChange={setForm} onSave={()=>void saveSettings()}/>:section==="operations"?<OperationsPanel form={form} disabled={!canManageSettings} saving={saving} onChange={setForm} onSave={()=>void saveSettings()}/>:section==="billing"?<BillingPanel form={form} disabled={!canManageSettings} saving={saving} onChange={setForm} onSave={()=>void saveSettings()}/>:section==="inventory"?<InventoryPanel form={form} disabled={!canManageSettings} saving={saving} onChange={setForm} onSave={()=>void saveSettings()}/>:section==="access"?<AccessPanel users={accessUsers} currentUserId={currentUserId} isAdmin={isAdmin} onManage={openRoleEditor} onToggleActive={user=>void toggleUserActive(user)}/>:section==="appearance"?<AppearancePanel settings={settings} currentUserName={currentUserName}/>:<AuditPanel events={audit} profiles={profiles}/>}</div></div>{!canManageSettings&&section!=="appearance"&&section!=="access"&&section!=="audit"&&<div className="mt-3 text-xs text-muted-foreground">You have read-only access to these settings. Admin or Manager is required to save changes.</div>}</div></section></div><RoleEditorModal user={roleUser} selected={selectedRoles} saving={savingRoles} error={roleError} onToggle={toggleRole} onSave={()=>void saveRoles()} onClose={()=>setRoleUser(null)}/></main>;
+  return <main className="min-h-screen bg-background text-foreground"><ActionNotice notice={notice} onClose={()=>setNotice(null)}/><div className="grid min-h-screen grid-cols-[236px_1fr]"><aside className="border-r border-border bg-card"><CompanyBrand className="border-b border-border px-5 py-4" nameClassName="text-lg font-black" compact /><nav className="space-y-1 p-3">{navigation.map(item=>{const Icon=item.icon;return <Link key={item.label} href={item.href} className={`flex items-center gap-3 px-3 py-2.5 text-sm font-medium ${item.active?"bg-primary text-primary-foreground":"text-muted-foreground hover:bg-muted hover:text-foreground"}`}><Icon className="h-4 w-4"/>{item.label}</Link>;})}</nav></aside><section className="min-w-0"><header className="flex h-16 items-center justify-between border-b border-border bg-card px-6"><div className="flex h-10 w-[420px] items-center gap-2 border border-border px-3 text-sm text-muted-foreground"><Search className="h-4 w-4"/>Search settings, users, roles...</div><div className="flex items-center gap-2"><FieldOpsThemeToggle/><button className="flex h-10 w-10 items-center justify-center border border-border" aria-label="Notifications"><Bell className="h-4 w-4"/></button></div></header><div className="p-6"><div className="flex flex-wrap items-end justify-between gap-4"><div><div className="text-sm font-bold text-primary">Administration</div><h1 className="mt-1 text-3xl font-black">Settings</h1><p className="mt-2 max-w-3xl text-sm text-muted-foreground">Central business configuration, operational defaults, user access, appearance and settings audit.</p></div><div className="text-right"><div className="text-xs font-black uppercase text-muted-foreground">Your access</div><div className="mt-1 text-sm font-black">{currentRoles.length?currentRoles.map(r=>r.charAt(0).toUpperCase()+r.slice(1)).join(" · "):"No role"}</div></div></div>{error&&<div className="mt-5 border border-rose-500/40 bg-rose-500/10 p-4 text-sm font-semibold text-rose-700 dark:text-rose-200">{error}</div>}<div className="mt-6 overflow-hidden border border-border"><SettingsTabs value={section} onChange={setSection}/><div className="bg-background p-5">{loading?<div className="p-8 text-center text-sm text-muted-foreground">Loading settings…</div>:section==="company"?<CompanyPanel form={form} disabled={!canManageSettings} saving={saving} logoBusy={logoBusy} onChange={setForm} onSave={()=>void saveSettings()} onUploadLogo={file=>void uploadCompanyLogo(file)} onRemoveLogo={()=>void removeCompanyLogo()}/>:section==="operations"?<OperationsPanel form={form} disabled={!canManageSettings} saving={saving} onChange={setForm} onSave={()=>void saveSettings()}/>:section==="billing"?<BillingPanel form={form} disabled={!canManageSettings} saving={saving} onChange={setForm} onSave={()=>void saveSettings()}/>:section==="inventory"?<InventoryPanel form={form} disabled={!canManageSettings} saving={saving} onChange={setForm} onSave={()=>void saveSettings()}/>:section==="access"?<AccessPanel users={accessUsers} currentUserId={currentUserId} isAdmin={isAdmin} onManage={openRoleEditor} onToggleActive={user=>void toggleUserActive(user)}/>:section==="appearance"?<AppearancePanel settings={settings} currentUserName={currentUserName} isAdmin={isAdmin} resettingDemo={resettingDemo} onResetDemo={()=>void resetItDemoData()}/>:<AuditPanel events={audit} profiles={profiles}/>}</div></div>{!canManageSettings&&section!=="appearance"&&section!=="access"&&section!=="audit"&&<div className="mt-3 text-xs text-muted-foreground">You have read-only access to these settings. Admin or Manager is required to save changes.</div>}</div></section></div><RoleEditorModal user={roleUser} selected={selectedRoles} saving={savingRoles} error={roleError} onToggle={toggleRole} onSave={()=>void saveRoles()} onClose={()=>setRoleUser(null)}/></main>;
 }

@@ -1,6 +1,6 @@
 export type BillingSection = "ready" | "invoices" | "payments";
 export type BillingSummaryView = "ready" | "draft" | "outstanding" | "overdue";
-export type InvoiceTab = "overview" | "labour" | "materials" | "charges" | "payments" | "activity";
+export type InvoiceTab = "overview" | "edit" | "activity";
 
 export type DbCustomer = {
   id: string;
@@ -36,7 +36,34 @@ export type DbWorkOrder = {
   customer_po: string | null;
   completed_at: string | null;
   closed_at: string | null;
+  travel_distance_km: number;
 };
+
+
+export type DbBillingSettings = {
+  company_name: string;
+  legal_name: string | null;
+  logo_path: string | null;
+  business_number: string | null;
+  phone: string | null;
+  email: string | null;
+  website: string | null;
+  address1: string | null;
+  address2: string | null;
+  city: string | null;
+  province_state: string | null;
+  postal_code: string | null;
+  country: string;
+  invoice_footer: string | null;
+  minimum_billable_minutes: number;
+  travel_billing_mode: "time" | "distance" | "none";
+  travel_hourly_rate: number | null;
+  travel_per_km_rate: number;
+};
+
+export type DbInventoryItem = { id:string; name:string; sku:string|null; unit:string; unit_cost:number; unit_price:number; active:boolean; };
+export type DbInventoryLocation = { id:string; name:string; location_type:string; active:boolean; };
+export type DbMaterialUsage = { id:string; work_order_id:string; inventory_item_id:string|null; description:string; quantity:number; quantity_returned:number; unit_cost:number; unit_price:number; billable:boolean; recorded_by:string|null; created_at:string; };
 
 export type DbInvoice = {
   id: string;
@@ -165,3 +192,5 @@ export type AdjustmentForm = {
   reason: string;
   notes: string;
 };
+
+export type DbInventoryTransaction = { inventory_item_id:string; location_id:string|null; quantity:number; };

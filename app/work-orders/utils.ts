@@ -130,6 +130,17 @@ export function dateTimePartMinute(value: string) {
     : "00";
 }
 
+export function dateTimePartTime(value: string) {
+  return value && value.includes("T") ? value.slice(11, 16) : "";
+}
+
+export function mergeDateTimeClock(currentValue: string, nextTime: string) {
+  const currentDate = dateTimePartDate(currentValue);
+  if (!currentDate) return "";
+  const time = /^\d{2}:\d{2}$/.test(nextTime) ? nextTime : "00:00";
+  return `${currentDate}T${time}`;
+}
+
 export function mergeDateTimeParts(
   currentValue: string,
   part: "date" | "hour" | "minute",
@@ -270,11 +281,12 @@ export function allowedNormalWorkOrderTransitions(status: string): string[] {
     case "requested": return ["planned", "cancelled"];
     case "planned": return ["cancelled"];
     case "assigned": return ["travelling", "cancelled"];
-    case "travelling": return ["on_site", "cancelled"];
+    case "travelling": return ["waiting", "working", "cancelled"];
+    // Legacy compatibility only. New work no longer requires an On Site step.
     case "on_site": return ["working", "waiting", "finished", "cancelled"];
     case "working": return ["waiting", "finished", "cancelled"];
-    case "waiting": return ["working", "finished", "cancelled"];
-    case "finished": return ["billing_ready"];
+    case "waiting": return ["travelling", "working", "finished", "cancelled"];
+    case "finished": return ["billing_ready", "closed"];
     case "billing_ready": return ["closed"];
     default: return [];
   }

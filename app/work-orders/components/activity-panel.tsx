@@ -45,10 +45,15 @@ export function ActivityPanel({
     { key: "closed", label: "Closed" },
   ] as const;
 
+  const firstWaitingEvent = chronologicalEvents.find(
+    (event) => event.new_status === "waiting"
+  );
+  const waitingParentKey: "travelling" | "working" =
+    firstWaitingEvent?.old_status === "travelling" ? "travelling" : "working";
+
   const subFlow = [
     { key: "assigned", label: "Assigned", parentKey: "dispatched" },
-    { key: "on_site", label: "On Site", parentKey: "travelling" },
-    { key: "waiting", label: "Waiting", parentKey: "working" },
+    { key: "waiting", label: "Waiting", parentKey: waitingParentKey },
   ] as const;
 
   const firstAssignment = [...assignments]

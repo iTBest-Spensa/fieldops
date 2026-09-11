@@ -39,6 +39,7 @@ export type ScheduleItem = {
   id: string;
   title: string;
   status: string;
+  workOrderUuid?: string;
 };
 
 export type WaitingJob = {

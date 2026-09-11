@@ -39,6 +39,7 @@ export type DbWorkOrder = {
   billing_status: string | null;
   billing_ready_at: string | null;
   billed_at: string | null;
+  travel_distance_km: number;
 };
 
 export type DbCustomer = {
@@ -85,6 +86,30 @@ export type DbTimeEntry = {
   ended_reason: string | null;
 };
 
+export type DbTimeCorrection = {
+  id: string;
+  time_entry_id: string | null;
+  work_order_id: string;
+  technician_id: string;
+  operation: "added" | "corrected";
+  original_values: Record<string, unknown> | null;
+  corrected_values: Record<string, unknown>;
+  reason: string;
+  corrected_by: string;
+  corrected_at: string;
+};
+
+export type DbInventoryTransaction = {
+  inventory_item_id: string;
+  location_id: string | null;
+  quantity: number;
+};
+
+export type DbRateDefaults = {
+  default_customer_billing_rate: number;
+  default_technician_pay_rate: number;
+};
+
 export type WorkOrderOverrun = {
   key: string;
   workOrderId: string;
@@ -120,6 +145,7 @@ export type EditWorkOrderForm = {
   scheduleDate: string;
   startTime: string;
   endTime: string;
+  travelDistanceKm: string;
 };
 
 export type AssignTechnicianForm = {
@@ -181,4 +207,36 @@ export type NewWorkOrderForm = {
   estimatedDurationMinutes: string;
   requiredSkills: string;
   serviceArea: string;
+};
+
+export type DbInventoryItem = {
+  id: string;
+  name: string;
+  sku: string | null;
+  unit: string;
+  unit_cost: number;
+  unit_price: number;
+  track_stock: boolean;
+  active: boolean;
+};
+
+export type DbInventoryLocation = {
+  id: string;
+  name: string;
+  location_type: string;
+  active: boolean;
+};
+
+export type DbMaterialUsage = {
+  id: string;
+  work_order_id: string;
+  inventory_item_id: string | null;
+  description: string;
+  quantity: number;
+  quantity_returned: number;
+  unit_cost: number;
+  unit_price: number;
+  billable: boolean;
+  recorded_by: string | null;
+  created_at: string;
 };

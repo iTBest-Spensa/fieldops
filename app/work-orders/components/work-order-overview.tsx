@@ -1,8 +1,54 @@
-import { Building2, CalendarDays, Clock3, ReceiptText, UserRound } from "lucide-react";
-import type { DbAssignment, DbCustomer, DbProfile, DbSite, DbTimeEntry, DbWorkOrder } from "../types";
+import { Building2, CalendarDays, Clock3, PackagePlus, ReceiptText, RotateCcw, UserRound } from "lucide-react";
+import type { DbAssignment, DbCustomer, DbMaterialUsage, DbProfile, DbSite, DbTimeEntry, DbWorkOrder } from "../types";
 import { billingStatusLabel, formatCompactDateTime, formatLocalDateTime, isTerminalWorkOrderStatus, minutesLabel, statusLabel } from "../utils";
 import { InfoCard } from "./info-card";
 import { DetailRow } from "./detail-row";
+
+
+type MaterialUsageGroup = {
+  key: string;
+  description: string;
+  quantity: number;
+  quantityReturned: number;
+  unitPrice: number;
+  billable: boolean;
+  usages: DbMaterialUsage[];
+};
+
+function groupMaterialUsages(materialUsages: DbMaterialUsage[]): MaterialUsageGroup[] {
+  const groups = new Map<string, MaterialUsageGroup>();
+
+  for (const usage of materialUsages) {
+    const identity = usage.inventory_item_id
+      ? `inventory:${usage.inventory_item_id}`
+      : `usage:${usage.id}`;
+    const key = [
+      identity,
+      Number(usage.unit_price || 0).toFixed(6),
+      usage.billable ? "billable" : "not-billed",
+    ].join("|");
+
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, {
+        key,
+        description: usage.description,
+        quantity: Number(usage.quantity || 0),
+        quantityReturned: Number(usage.quantity_returned || 0),
+        unitPrice: Number(usage.unit_price || 0),
+        billable: usage.billable,
+        usages: [usage],
+      });
+      continue;
+    }
+
+    existing.quantity += Number(usage.quantity || 0);
+    existing.quantityReturned += Number(usage.quantity_returned || 0);
+    existing.usages.push(usage);
+  }
+
+  return [...groups.values()];
+}
 
 export function WorkOrderOverview({
   order,
@@ -15,6 +61,10 @@ export function WorkOrderOverview({
   profileMap,
   canCorrectTime,
   canRecoverBilling,
+  materialUsages,
+  canManageMaterials,
+  onAddMaterial,
+  onReturnMaterial,
   onAddTime,
   onCorrectTime,
   onRecoverBilling,
@@ -29,15 +79,21 @@ export function WorkOrderOverview({
   profileMap: Map<string, DbProfile>;
   canCorrectTime: boolean;
   canRecoverBilling: boolean;
+  materialUsages: DbMaterialUsage[];
+  canManageMaterials: boolean;
+  onAddMaterial: () => void;
+  onReturnMaterial: (usage: DbMaterialUsage) => void;
   onAddTime: (presetActivity?: "work" | "break") => void;
   onCorrectTime: (entry: DbTimeEntry) => void;
   onRecoverBilling: () => void;
 }) {
-  const activeAssignments = assignments.filter(
-    (assignment) =>
-      !["removed", "declined", "completed"].includes(
-        assignment.assignment_status
-      )
+  const groupedMaterialUsages = groupMaterialUsages(materialUsages);
+
+  // The parent already supplies the current assignment for active jobs or the
+  // final historical primary assignment for completed/Billing Ready jobs. Do
+  // not discard a completed assignment here or the UI falsely says Unassigned.
+  const displayAssignments = assignments.filter(
+    (assignment) => !["removed", "declined"].includes(assignment.assignment_status)
   );
 
   // Keep all work-order time for billing/review logic, but the normal
@@ -151,7 +207,7 @@ export function WorkOrderOverview({
   return (
     <div className="space-y-5">
       {reviewFlags.length > 0 && (
-        <section className="border border-amber-500/50 bg-amber-500/10 p-4">
+        <section className="rounded-xl border border-amber-500/50 bg-amber-500/10 p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <div className="text-xs font-black uppercase text-amber-700 dark:text-amber-300">
@@ -213,17 +269,19 @@ export function WorkOrderOverview({
           icon={UserRound}
           label="Assigned technician"
           value={
-            activeAssignments.length
-              ? profileMap.get(activeAssignments[0].technician_id)?.full_name ??
-                profileMap.get(activeAssignments[0].technician_id)?.email ??
+            displayAssignments.length
+              ? profileMap.get(displayAssignments[0].technician_id)?.full_name ??
+                profileMap.get(displayAssignments[0].technician_id)?.email ??
                 "Technician"
               : "Unassigned"
           }
           subvalue={
-            activeAssignments.length > 1
-              ? `${activeAssignments.length} technicians assigned`
-              : activeAssignments[0]?.assignment_status
-              ? statusLabel(activeAssignments[0].assignment_status)
+            displayAssignments.length > 1
+              ? `${displayAssignments.length} technicians recorded`
+              : displayAssignments[0]?.assignment_status === "completed"
+              ? "Final technician · completed"
+              : displayAssignments[0]?.assignment_status
+              ? statusLabel(displayAssignments[0].assignment_status === "accepted" ? "assigned" : displayAssignments[0].assignment_status)
               : "Dispatch required"
           }
         />
@@ -248,7 +306,7 @@ export function WorkOrderOverview({
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[1.3fr_0.7fr]">
-        <section className="border border-border">
+        <section className="rounded-xl border border-border">
           <div className="border-b border-border bg-muted/40 px-4 py-3 text-xs font-black uppercase tracking-wider">
             Job Description
           </div>
@@ -257,7 +315,7 @@ export function WorkOrderOverview({
           </div>
         </section>
 
-        <section className="border border-border">
+        <section className="rounded-xl border border-border">
           <div className="border-b border-border bg-muted/40 px-4 py-3 text-xs font-black uppercase tracking-wider">
             Job Details
           </div>
@@ -266,11 +324,12 @@ export function WorkOrderOverview({
             <DetailRow label="Source" value={statusLabel(order.source)} />
             <DetailRow label="Requested" value={formatLocalDateTime(order.requested_at)} />
             <DetailRow label="Customer PO" value={order.customer_po || "None"} />
+            <DetailRow label="Travel distance" value={`${Number(order.travel_distance_km || 0).toFixed(2)} km`} />
           </div>
         </section>
       </div>
 
-      <section className="border border-border">
+      <section className="rounded-xl border border-border">
         <div className="border-b border-border bg-muted/40 px-4 py-3 text-xs font-black uppercase tracking-wider">
           Skills & Assignment
         </div>
@@ -284,7 +343,7 @@ export function WorkOrderOverview({
                 (order.required_skills ?? []).map((skill) => (
                   <span
                     key={skill}
-                    className="border border-primary/30 bg-primary/[0.06] px-2 py-1 text-[10px] font-bold text-primary"
+                    className="rounded-lg border border-primary/30 bg-primary/[0.06] px-2 py-1 text-[10px] font-bold text-primary"
                   >
                     {skill}
                   </span>
@@ -300,11 +359,11 @@ export function WorkOrderOverview({
               Assigned staff
             </div>
             <div className="mt-2 space-y-2">
-              {activeAssignments.length ? (
-                activeAssignments.map((assignment) => (
+              {displayAssignments.length ? (
+                displayAssignments.map((assignment) => (
                   <div
                     key={assignment.id}
-                    className="flex items-center justify-between gap-3 border border-border px-3 py-2"
+                    className="flex items-center justify-between gap-3 rounded-xl border border-border px-3 py-2"
                   >
                     <div>
                       <div className="text-xs font-bold">
@@ -314,7 +373,9 @@ export function WorkOrderOverview({
                       </div>
                       <div className="mt-0.5 text-[10px] text-muted-foreground">
                         {statusLabel(assignment.assignment_role)} ·{" "}
-                        {assignment.assignment_status === "accepted"
+                        {assignment.assignment_status === "completed"
+                          ? "Completed / Final technician"
+                          : assignment.assignment_status === "accepted"
                           ? "Assigned"
                           : statusLabel(assignment.assignment_status)}
                         {assignment.assigned_at
@@ -337,7 +398,61 @@ export function WorkOrderOverview({
         </div>
       </section>
 
-      <section className="border border-border">
+      <section className="rounded-xl border border-border">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/40 px-4 py-3">
+          <div>
+            <div className="text-xs font-black uppercase tracking-wider">Materials Used</div>
+            <div className="mt-0.5 text-[10px] text-muted-foreground">Inventory consumption is the source of truth. Returned quantity is removed from the bill.</div>
+          </div>
+          {canManageMaterials && ["working", "waiting", "on_site", "billing_ready"].includes(order.status) ? (
+            <button type="button" onClick={onAddMaterial} className="inline-flex h-9 items-center gap-2 rounded-xl border border-primary/40 bg-primary/[0.06] px-3 text-xs font-black text-primary">
+              <PackagePlus className="h-4 w-4" /> Add from Inventory
+            </button>
+          ) : null}
+        </div>
+        {groupedMaterialUsages.length === 0 ? (
+          <div className="p-4 text-sm text-muted-foreground">No materials have been consumed on this Work Order.</div>
+        ) : (
+          <div className="divide-y divide-border">
+            {groupedMaterialUsages.map((group) => {
+              const net = Math.max(0, group.quantity - group.quantityReturned);
+              const returnTarget = group.usages.find(
+                (usage) => Math.max(0, Number(usage.quantity) - Number(usage.quantity_returned || 0)) > 0,
+              ) ?? null;
+
+              return (
+                <div key={group.key} className="grid gap-3 px-4 py-3 md:grid-cols-[1fr_100px_120px_100px_120px] md:items-center">
+                  <div>
+                    <div className="text-sm font-bold">{group.description}</div>
+                    <div className="mt-0.5 text-[10px] text-muted-foreground">
+                      Used {group.quantity.toFixed(2)} · Returned {group.quantityReturned.toFixed(2)}
+                    </div>
+                  </div>
+                  <div className="text-xs font-black">Net {net.toFixed(2)}</div>
+                  <div className="text-xs">${group.unitPrice.toFixed(2)} / unit</div>
+                  <div className={`text-[10px] font-black uppercase ${group.billable ? "text-primary" : "text-muted-foreground"}`}>
+                    {group.billable ? "Billable" : "Not billed"}
+                  </div>
+                  <div>
+                    {canManageMaterials && net > 0 && returnTarget ? (
+                      <button
+                        type="button"
+                        onClick={() => onReturnMaterial(returnTarget)}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-2 text-[10px] font-black hover:bg-muted"
+                        title={group.usages.length > 1 ? "Returns are recorded against the underlying stock usage records one batch at a time." : "Return material"}
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" /> Return
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-border">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/40 px-4 py-3">
           <div className="text-xs font-black uppercase tracking-wider">
             Latest Assigned Technician Time
@@ -470,7 +585,7 @@ export function WorkOrderOverview({
       {(order.completion_summary || order.internal_notes) && (
         <section className="grid gap-4 md:grid-cols-2">
           {order.completion_summary && (
-            <div className="border border-border p-4">
+            <div className="rounded-xl border border-border p-4">
               <div className="text-[10px] font-black uppercase text-muted-foreground">
                 Completion Summary
               </div>
@@ -478,7 +593,7 @@ export function WorkOrderOverview({
             </div>
           )}
           {order.internal_notes && (
-            <div className="border border-border p-4">
+            <div className="rounded-xl border border-border p-4">
               <div className="text-[10px] font-black uppercase text-muted-foreground">
                 Internal Notes
               </div>

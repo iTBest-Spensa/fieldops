@@ -31,8 +31,6 @@ export function CustomerDetailModal({
 
   const tabs: Array<{key: CustomerDetailTab; label: string; count?: number}> = [
     { key: "overview", label: "Overview" },
-    { key: "contacts", label: "Contacts", count: contacts.length },
-    { key: "sites", label: "Sites", count: sites.length },
     { key: "work_orders", label: "Work Orders", count: workOrders.length },
     { key: "notes", label: "Notes", count: notes.length },
   ];
@@ -72,8 +70,6 @@ export function CustomerDetailModal({
 
         <div className="flex-1 overflow-y-auto p-5">
           {tab === "overview" && <CustomerOverview customer={customer} contacts={contacts} sites={sites} workOrders={workOrders} />}
-          {tab === "contacts" && <CustomerContactsPanel contacts={contacts} sites={sites} canManage={canManage} onAdd={onAddContact} />}
-          {tab === "sites" && <CustomerSitesPanel sites={sites} canManage={canManage} onAdd={onAddSite} />}
           {tab === "work_orders" && <CustomerWorkOrdersPanel workOrders={workOrders} sites={sites} />}
           {tab === "notes" && <CustomerNotesPanel notes={notes} profileMap={profileMap} canManage={canManage} onAdd={onAddNote} />}
         </div>

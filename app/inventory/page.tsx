@@ -8,6 +8,7 @@ import {
   Search, Settings, ShoppingCart, Truck, Users,
 } from "lucide-react";
 import { FieldOpsThemeToggle } from "@/components/fieldops-theme-toggle";
+import { CompanyBrand } from "@/components/company-brand";
 import { createClient } from "@/lib/supabase/client";
 import type {
   DbCustomer, DbInventoryItem, DbInventoryItemNote, DbInventoryItemSupplier, DbInventoryLocation,
@@ -16,6 +17,7 @@ import type {
   DbReconciliationLine, DbRole, DbSite, DbSupplier, DbWorkOrder, InventoryItemForm,
   InventoryItemTab, InventorySection, InventorySummaryView, LocationForm, MovementForm,
   PurchaseOrderForm, ReceivingForm, ReturnForm, SupplierForm,
+  InventoryLocationItemHealth, InventoryLocationHealthSummary,
 } from "./types";
 import {
   emptyInventoryItemForm, emptyLocationForm, emptyMovementForm, emptyPurchaseOrderForm,
@@ -34,7 +36,7 @@ import { SuppliersTable } from "./components/suppliers-table";
 import { MovementsTable } from "./components/movements-table";
 import { InventoryItemFormModal } from "./components/modals/inventory-item-form-modal";
 import { InventoryItemDetailModal } from "./components/modals/inventory-item-detail-modal";
-import { InventorySummaryModal } from "./components/modals/inventory-summary-modal";
+import { InventoryStockHealthItemsModal, InventoryStockHealthLocationsModal, suggestedOrderQuantity } from "./components/modals/inventory-stock-health-modal";
 import { StockMovementModal } from "./components/modals/stock-movement-modal";
 import { SupplierFormModal } from "./components/modals/supplier-form-modal";
 import { LocationFormModal } from "./components/modals/location-form-modal";
@@ -109,8 +111,10 @@ export default function InventoryPage() {
   const [section, setSection] = useState<InventorySection>("stock");
   const [search, setSearch] = useState("");
   const [stockFilter, setStockFilter] = useState("all");
+  const [stockLocationFilter, setStockLocationFilter] = useState("all");
   const [activeFilter, setActiveFilter] = useState("active");
   const [summaryView, setSummaryView] = useState<InventorySummaryView | null>(null);
+  const [summaryLocationId, setSummaryLocationId] = useState<string | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [itemTab, setItemTab] = useState<InventoryItemTab>("overview");
   const [selectedPOId, setSelectedPOId] = useState<string | null>(null);
@@ -244,11 +248,103 @@ export default function InventoryPage() {
   },[supabase,loadInventory,authRequired]);
 
   const snapshots = useMemo(()=>buildItemSnapshots(items,transactions),[items,transactions]);
-  const filteredSnapshots = useMemo(()=>{ const q=search.trim().toLowerCase(); return snapshots.filter(s=>{ const i=s.item; const searchOk=!q||[i.name,i.sku,i.part_number,i.barcode,i.category,i.manufacturer].some(v=>v?.toLowerCase().includes(q)); const activeOk=activeFilter==="all"||(activeFilter==="active"?i.active:!i.active); const stockOk=stockFilter==="all"||s.stockStatus===stockFilter; return searchOk&&activeOk&&stockOk; }); },[snapshots,search,activeFilter,stockFilter]);
-  const summarySnapshots = useMemo(()=>summaryView==="low"?snapshots.filter(s=>s.item.active&&s.stockStatus==="low"):summaryView==="out"?snapshots.filter(s=>s.item.active&&s.stockStatus==="out"):snapshots,[summaryView,snapshots]);
-  const lowStock=snapshots.filter(s=>s.item.active&&s.item.track_stock&&s.stockStatus==="low").length;
-  const outOfStock=snapshots.filter(s=>s.item.active&&s.item.track_stock&&s.stockStatus==="out").length;
-  const inventoryValue=snapshots.filter(s=>s.item.active&&s.item.track_stock).reduce((sum,s)=>sum+s.value,0);
+  const stockLocationMap = useMemo(()=>new Map(locations.map(location=>[location.id,location] as const)),[locations]);
+  const activeStockLocations = useMemo(()=>locations.filter(location=>location.active),[locations]);
+  const activeTrackedItems = useMemo(()=>items.filter(item=>item.active&&item.track_stock),[items]);
+
+  const locationItemHealth = useMemo<InventoryLocationItemHealth[]>(()=>{
+    const balances = new Map<string,number>();
+    for(const tx of transactions){
+      if(!tx.location_id) continue;
+      const key=`${tx.location_id}:${tx.inventory_item_id}`;
+      balances.set(key,(balances.get(key)??0)+Number(tx.quantity||0));
+    }
+    return activeStockLocations.flatMap(location=>activeTrackedItems.map(item=>{
+      const onHand=balances.get(`${location.id}:${item.id}`)??0;
+      const stockStatus:InventoryLocationItemHealth["stockStatus"]=onHand<=0?"out":onHand<=Number(item.reorder_level||0)?"low":"ok";
+      return {location,item,onHand,stockStatus,value:onHand*Number(item.unit_cost||0)};
+    }));
+  },[activeStockLocations,activeTrackedItems,transactions]);
+
+  const locationHealthSummaries = useMemo<InventoryLocationHealthSummary[]>(()=>activeStockLocations.map(location=>{
+    const rows=locationItemHealth.filter(row=>row.location.id===location.id);
+    return {
+      location,
+      totalItems: rows.length,
+      lowStock: rows.filter(row=>row.stockStatus==="low").length,
+      outOfStock: rows.filter(row=>row.stockStatus==="out").length,
+      healthy: rows.filter(row=>row.stockStatus==="ok").length,
+      inventoryValue: rows.reduce((sum,row)=>sum+row.value,0),
+    };
+  }),[activeStockLocations,locationItemHealth]);
+
+  const scopedLocationHealth = useMemo(()=>stockLocationFilter==="all"?locationItemHealth:locationItemHealth.filter(row=>row.location.id===stockLocationFilter),[locationItemHealth,stockLocationFilter]);
+  const scopedLocationSummaries = useMemo(()=>stockLocationFilter==="all"?locationHealthSummaries:locationHealthSummaries.filter(row=>row.location.id===stockLocationFilter),[locationHealthSummaries,stockLocationFilter]);
+
+  const scopedSnapshots = useMemo(()=>{
+    if(stockLocationFilter==="all") return snapshots;
+    return snapshots.map(snapshot=>{
+      const health=locationItemHealth.find(row=>row.location.id===stockLocationFilter&&row.item.id===snapshot.item.id);
+      const locationTransactions=transactions.filter(tx=>tx.inventory_item_id===snapshot.item.id&&tx.location_id===stockLocationFilter);
+      const onHand=snapshot.item.track_stock?(health?.onHand??0):0;
+      const stockStatus = !snapshot.item.track_stock ? "ok" as const : health?.stockStatus??"out" as const;
+      const lastMovementAt=locationTransactions.reduce<string|null>((latest,tx)=>!latest||new Date(tx.created_at)>new Date(latest)?tx.created_at:latest,null);
+      return {...snapshot,onHand,stockStatus,value:onHand*Number(snapshot.item.unit_cost||0),locationCount:Math.abs(onHand)>0.000001?1:0,lastMovementAt};
+    });
+  },[snapshots,transactions,stockLocationFilter,locationItemHealth]);
+
+  const selectedStockLocation = stockLocationFilter==="all"?null:stockLocationMap.get(stockLocationFilter)??null;
+  const filteredSnapshots = useMemo(()=>{
+    const q=search.trim().toLowerCase();
+
+    // When All Locations + Low/Out is selected, the filter must operate on
+    // item-location stock positions rather than global item totals. An item
+    // can be healthy overall while still being low/out at a specific location.
+    if(stockLocationFilter==="all"&&(stockFilter==="low"||stockFilter==="out")){
+      return locationItemHealth
+        .filter(row=>row.stockStatus===stockFilter)
+        .filter(row=>{
+          const i=row.item;
+          const searchOk=!q||[i.name,i.sku,i.part_number,i.barcode,i.category,i.manufacturer,row.location.name,row.location.code].some(v=>v?.toLowerCase().includes(q));
+          const activeOk=activeFilter==="all"||(activeFilter==="active"?i.active:!i.active);
+          return searchOk&&activeOk;
+        })
+        .map(row=>{
+          const locationTransactions=transactions.filter(tx=>tx.inventory_item_id===row.item.id&&tx.location_id===row.location.id);
+          const lastMovementAt=locationTransactions.reduce<string|null>((latest,tx)=>!latest||new Date(tx.created_at)>new Date(latest)?tx.created_at:latest,null);
+          return {
+            item:row.item,
+            onHand:row.onHand,
+            stockStatus:row.stockStatus,
+            value:row.value,
+            locationCount:1,
+            lastMovementAt,
+            scopeLocationId:row.location.id,
+            scopeLocationName:row.location.name,
+          };
+        });
+    }
+
+    return scopedSnapshots.filter(snapshot=>{
+      const i=snapshot.item;
+      const searchOk=!q||[i.name,i.sku,i.part_number,i.barcode,i.category,i.manufacturer].some(v=>v?.toLowerCase().includes(q));
+      const activeOk=activeFilter==="all"||(activeFilter==="active"?i.active:!i.active);
+      const stockOk=stockFilter==="all"||snapshot.stockStatus===stockFilter;
+      return searchOk&&activeOk&&stockOk;
+    });
+  },[scopedSnapshots,search,activeFilter,stockFilter,stockLocationFilter,locationItemHealth,transactions]);
+  const totalStockPositions=scopedLocationHealth.length;
+  const lowStock=scopedLocationHealth.filter(row=>row.stockStatus==="low").length;
+  const outOfStock=scopedLocationHealth.filter(row=>row.stockStatus==="out").length;
+  const inventoryValue=scopedLocationHealth.reduce((sum,row)=>sum+row.value,0);
+  const selectedSummaryLocation = summaryLocationId?stockLocationMap.get(summaryLocationId)??null:null;
+  const selectedSummaryHealthRows = useMemo(()=>{
+    if(!summaryLocationId||!summaryView)return [];
+    const rows=locationItemHealth.filter(row=>row.location.id===summaryLocationId);
+    if(summaryView==="low")return rows.filter(row=>row.stockStatus==="low");
+    if(summaryView==="out")return rows.filter(row=>row.stockStatus==="out");
+    return rows;
+  },[locationItemHealth,summaryLocationId,summaryView]);
 
   const selectedSnapshot=selectedItemId?snapshots.find(s=>s.item.id===selectedItemId)??null:null;
   const selectedPO=selectedPOId?purchaseOrders.find(p=>p.id===selectedPOId)??null:null;
@@ -271,6 +367,32 @@ export default function InventoryPage() {
   async function saveLocation(){if(!locationForm.name.trim()){setLocationError("Location name is required.");return;}setSavingLocation(true);const {error:saveError}=await supabase.from("inventory_locations").insert({name:locationForm.name.trim(),code:locationForm.code||null,location_type:locationForm.locationType,site_id:locationForm.siteId||null,technician_id:locationForm.technicianId||null,vehicle_identifier:locationForm.vehicleIdentifier||null,notes:locationForm.notes||null,active:locationForm.active});if(saveError){setLocationError(saveError.message);showNotice("error",saveError.message);setSavingLocation(false);return;}await loadInventory();setLocationOpen(false);setSavingLocation(false);showNotice("success","Inventory location created.");}
 
   function openNewPO(){setPOForm(emptyPurchaseOrderForm);setPOError(null);setPOOpen(true);}
+  function openSummary(view:InventorySummaryView){setSummaryLocationId(null);setSummaryView(view);}
+  function openPOForHealthRows(rows:InventoryLocationItemHealth[]){
+    if(!rows.length)return;
+    const uniqueRows=[...new Map(rows.map(row=>[row.item.id,row] as const)).values()];
+    const supplierIds=uniqueRows.map(row=>{
+      const relation=itemSuppliers.find(link=>link.inventory_item_id===row.item.id&&link.active&&link.preferred);
+      return row.item.preferred_supplier_id||relation?.supplier_id||"";
+    });
+    const nonEmpty=[...new Set(supplierIds.filter(Boolean))];
+    const supplierId=nonEmpty.length===1&&supplierIds.every(id=>id===nonEmpty[0])?nonEmpty[0]:"";
+    const lines=uniqueRows.map(row=>{
+      const preferredRelation=itemSuppliers.find(link=>link.inventory_item_id===row.item.id&&link.active&&(supplierId?link.supplier_id===supplierId:link.preferred));
+      return {
+        itemId:row.item.id,
+        quantity:String(suggestedOrderQuantity(row)),
+        unitCost:String(preferredRelation?.last_unit_cost??row.item.unit_cost??0),
+        supplierSku:preferredRelation?.supplier_sku??"",
+      };
+    });
+    const locationNames=[...new Set(rows.map(row=>row.location.name))].join(", ");
+    setPOForm({...emptyPurchaseOrderForm,supplierId,notes:`Stock replenishment for ${locationNames}.`,lines});
+    setPOError(null);
+    setSummaryLocationId(null);
+    setSummaryView(null);
+    setPOOpen(true);
+  }
   async function savePO(){const shipping=numberOrNaN(poForm.shippingAmount);const tax=numberOrNaN(poForm.taxAmount);if(!poForm.supplierId){setPOError("Choose a supplier.");return;}if(typeof shipping!=="number"||typeof tax!=="number"||Number.isNaN(shipping)||Number.isNaN(tax)||shipping<0||tax<0){setPOError("Shipping and tax must be valid non-negative numbers.");return;}const lines=poForm.lines.filter(l=>l.itemId).map(l=>({inventory_item_id:l.itemId,quantity:Number(l.quantity),unit_cost:l.unitCost,supplier_sku:l.supplierSku}));if(!lines.length||lines.some(l=>!Number.isFinite(l.quantity)||l.quantity<=0)){setPOError("Add at least one valid PO line with quantity greater than zero.");return;}setSavingPO(true);const {data,error:saveError}=await supabase.rpc("fieldops_create_purchase_order",{p_supplier_id:poForm.supplierId,p_expected_date:poForm.expectedDate||null,p_shipping_amount:shipping,p_tax_amount:tax,p_notes:poForm.notes||null,p_lines:lines});if(saveError){setPOError(saveError.message);showNotice("error",saveError.message);setSavingPO(false);return;}await loadInventory();const result=data as {purchase_order_id?:string}|null;if(result?.purchase_order_id)setSelectedPOId(result.purchase_order_id);setPOOpen(false);setSavingPO(false);showNotice("success","Purchase order created.");}
   async function setPOStatus(status:"approved"|"ordered"|"closed"|"cancelled"){if(!selectedPO)return;setSavingPOStatus(true);const {error:saveError}=await supabase.rpc("fieldops_set_purchase_order_status",{p_purchase_order_id:selectedPO.id,p_status:status});if(saveError){showNotice("error",saveError.message);setSavingPOStatus(false);return;}await loadInventory();setSavingPOStatus(false);showNotice("success",`Purchase order marked ${status.replace(/_/g," ")}.`);}
 
@@ -303,9 +425,10 @@ export default function InventoryPage() {
     movements:{title:"Stock Movements",description:"Permanent ledger of receipts, issues, transfers, returns, consumption and adjustments."},
   };
 
-  return <main className="min-h-screen bg-background text-foreground"><ActionNotice notice={actionNotice} onClose={()=>setActionNotice(null)}/><div className="grid min-h-screen grid-cols-[236px_1fr]"><aside className="border-r border-border bg-card"><div className="border-b border-border px-5 py-5"><div className="text-lg font-black">FieldOps</div><div className="text-xs text-muted-foreground">Service Operations</div></div><nav className="space-y-1 p-3">{navigation.map(n=>{const Icon=n.icon;return <Link key={n.label} href={n.href} className={`flex items-center gap-3 px-3 py-2.5 text-sm font-medium ${n.active?"bg-primary text-primary-foreground":"text-muted-foreground hover:bg-muted hover:text-foreground"}`}><Icon className="h-4 w-4"/>{n.label}</Link>})}</nav></aside><section className="min-w-0"><header className="flex h-16 items-center justify-between border-b border-border bg-card px-6"><div className="flex h-10 w-[420px] items-center gap-2 border border-border px-3 text-sm text-muted-foreground"><Search className="h-4 w-4"/>Search work orders, customers, technicians...</div><div className="flex items-center gap-2"><FieldOpsThemeToggle/><button className="flex h-10 w-10 items-center justify-center border border-border" aria-label="Notifications"><Bell className="h-4 w-4"/></button></div></header><div className="p-6"><div className="flex flex-wrap items-start justify-between gap-4"><div><div className="text-sm font-bold text-primary">Inventory</div><h1 className="mt-1 text-3xl font-black">Inventory Management</h1><p className="mt-2 max-w-3xl text-sm text-muted-foreground">Control stock from purchase order through receiving, issue/consumption, returns, transfers and physical reconciliation. Serialized equipment remains in Assets.</p></div><button onClick={()=>void loadInventory()} className="inline-flex h-10 items-center gap-2 border border-border px-3 text-xs font-black hover:bg-muted"><RefreshCw className={`h-4 w-4 ${loading?"animate-spin":""}`}/>Refresh</button></div>{error&&<div className="mt-5 border border-rose-500/40 bg-rose-500/10 p-4 text-sm font-semibold text-rose-600 dark:text-rose-300">{error}</div>}<div className="mt-6"><InventorySummaryCards totalItems={snapshots.length} lowStock={lowStock} outOfStock={outOfStock} inventoryValue={inventoryValue} onView={setSummaryView}/></div><div className="mt-6"><SectionTabs value={section} onChange={setSection}/></div><div className="mt-5 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-black">{sectionInfo[section].title}</h2><p className="mt-1 text-xs text-muted-foreground">{sectionInfo[section].description}</p></div><div className="flex flex-wrap gap-2">{section==="stock"&&<>{canManage&&<button onClick={openNewLocation} className="inline-flex h-10 items-center gap-2 border border-border px-3 text-xs font-black"><MapPin className="h-4 w-4"/>New Location</button>}{canFieldMove&&<button onClick={()=>openMovement()} className="inline-flex h-10 items-center gap-2 border border-border px-3 text-xs font-black"><RotateCcw className="h-4 w-4"/>Stock Movement</button>}{canManage&&<button onClick={openNewItem} className="inline-flex h-10 items-center gap-2 bg-primary px-4 text-xs font-black text-primary-foreground"><Plus className="h-4 w-4"/>New Item</button>}</>}{section==="purchase_orders"&&canManage&&<button onClick={openNewPO} className="inline-flex h-10 items-center gap-2 bg-primary px-4 text-xs font-black text-primary-foreground"><ShoppingCart className="h-4 w-4"/>New Purchase Order</button>}{section==="receiving"&&canManage&&<button onClick={openReceiving} className="inline-flex h-10 items-center gap-2 bg-primary px-4 text-xs font-black text-primary-foreground"><ClipboardCheck className="h-4 w-4"/>Receive PO</button>}{section==="returns"&&canFieldMove&&<button onClick={openReturn} className="inline-flex h-10 items-center gap-2 bg-primary px-4 text-xs font-black text-primary-foreground"><RotateCcw className="h-4 w-4"/>New Return</button>}{section==="reconciliation"&&canManage&&<button onClick={openStartReconciliation} className="inline-flex h-10 items-center gap-2 bg-primary px-4 text-xs font-black text-primary-foreground"><ClipboardCheck className="h-4 w-4"/>Start Reconciliation</button>}{section==="suppliers"&&canManage&&<button onClick={openNewSupplier} className="inline-flex h-10 items-center gap-2 bg-primary px-4 text-xs font-black text-primary-foreground"><Plus className="h-4 w-4"/>New Supplier</button>}{section==="movements"&&canFieldMove&&<button onClick={()=>openMovement()} className="inline-flex h-10 items-center gap-2 bg-primary px-4 text-xs font-black text-primary-foreground"><Plus className="h-4 w-4"/>Record Movement</button>}</div></div>{section==="stock"&&<><div className="mt-4 flex flex-wrap items-center gap-3 border border-border bg-card p-3"><div className="flex min-w-[280px] flex-1 items-center gap-2 border border-border bg-background px-3"><Search className="h-4 w-4 text-muted-foreground"/><input value={search} onChange={e=>setSearch(e.target.value)} className="h-10 w-full bg-transparent text-sm outline-none" placeholder="Search item, SKU, part number, barcode, category or manufacturer"/></div><Filter className="h-4 w-4 text-muted-foreground"/><select value={stockFilter} onChange={e=>setStockFilter(e.target.value)} className="h-10 border border-border bg-background px-3 text-xs font-bold"><option value="all">All stock</option><option value="ok">Healthy</option><option value="low">Low stock</option><option value="out">Out of stock</option></select><select value={activeFilter} onChange={e=>setActiveFilter(e.target.value)} className="h-10 border border-border bg-background px-3 text-xs font-bold"><option value="active">Active items</option><option value="inactive">Inactive items</option><option value="all">All items</option></select></div><div className="mt-4">{loading&&!items.length?<div className="border border-border bg-card p-8 text-center text-sm text-muted-foreground">Loading inventory…</div>:<StockTable snapshots={filteredSnapshots} onOpen={openItem}/>}</div></>}{section==="purchase_orders"&&<div className="mt-4"><PurchaseOrdersTable orders={purchaseOrders} lines={poItems} supplierMap={supplierMap} onOpen={setSelectedPOId}/></div>}{section==="receiving"&&<div className="mt-4"><ReceiptsTable receipts={receipts} poMap={poMap} locationMap={locationMap}/></div>}{section==="returns"&&<div className="mt-4"><ReturnsTable returns={returns} locationMap={locationMap} supplierMap={supplierMap} workOrderMap={workOrderMap} profileMap={profileMap} customerMap={customerMap}/></div>}{section==="reconciliation"&&<div className="mt-4"><ReconciliationTable reconciliations={reconciliations} locationMap={locationMap} onOpen={setSelectedReconciliationId}/></div>}{section==="suppliers"&&<div className="mt-4"><SuppliersTable suppliers={suppliers} onEdit={openEditSupplier}/></div>}{section==="movements"&&<div className="mt-4"><MovementsTable movements={transactions} itemMap={itemMap} locationMap={locationMap} workOrderMap={workOrderMap} profileMap={profileMap}/></div>}</div></section></div>
+  return <main className="min-h-screen bg-background text-foreground"><ActionNotice notice={actionNotice} onClose={()=>setActionNotice(null)}/><div className="grid min-h-screen grid-cols-[236px_1fr]"><aside className="border-r border-border bg-card"><CompanyBrand className="border-b border-border px-5 py-4" nameClassName="text-lg font-black" compact /><nav className="space-y-1 p-3">{navigation.map(n=>{const Icon=n.icon;return <Link key={n.label} href={n.href} className={`flex items-center gap-3 px-3 py-2.5 text-sm font-medium ${n.active?"bg-primary text-primary-foreground":"text-muted-foreground hover:bg-muted hover:text-foreground"}`}><Icon className="h-4 w-4"/>{n.label}</Link>})}</nav></aside><section className="min-w-0"><header className="flex h-16 items-center justify-between border-b border-border bg-card px-6"><div className="flex h-10 w-[420px] items-center gap-2 border border-border px-3 text-sm text-muted-foreground"><Search className="h-4 w-4"/>Search work orders, customers, technicians...</div><div className="flex items-center gap-2"><FieldOpsThemeToggle/><button className="flex h-10 w-10 items-center justify-center border border-border" aria-label="Notifications"><Bell className="h-4 w-4"/></button></div></header><div className="p-6"><div className="flex flex-wrap items-start justify-between gap-4"><div><div className="text-sm font-bold text-primary">Inventory</div><h1 className="mt-1 text-3xl font-black">Inventory Management</h1><p className="mt-2 max-w-3xl text-sm text-muted-foreground">Control stock from purchase order through receiving, issue/consumption, returns, transfers and physical reconciliation. Serialized equipment remains in Assets.</p></div><button onClick={()=>void loadInventory()} className="inline-flex h-10 items-center gap-2 border border-border px-3 text-xs font-black hover:bg-muted"><RefreshCw className={`h-4 w-4 ${loading?"animate-spin":""}`}/>Refresh</button></div>{error&&<div className="mt-5 border border-rose-500/40 bg-rose-500/10 p-4 text-sm font-semibold text-rose-600 dark:text-rose-300">{error}</div>}<div className="mt-6"><InventorySummaryCards totalItems={totalStockPositions} lowStock={lowStock} outOfStock={outOfStock} inventoryValue={inventoryValue} scopeLabel={selectedStockLocation?.name??"All locations"} onView={openSummary}/></div><div className="mt-6"><SectionTabs value={section} onChange={setSection}/></div><div className="mt-5 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-black">{sectionInfo[section].title}</h2><p className="mt-1 text-xs text-muted-foreground">{sectionInfo[section].description}</p></div><div className="flex flex-wrap gap-2">{section==="stock"&&<>{canManage&&<button onClick={openNewLocation} className="inline-flex h-10 items-center gap-2 border border-border px-3 text-xs font-black"><MapPin className="h-4 w-4"/>New Location</button>}{canFieldMove&&<button onClick={()=>openMovement()} className="inline-flex h-10 items-center gap-2 border border-border px-3 text-xs font-black"><RotateCcw className="h-4 w-4"/>Stock Movement</button>}{canManage&&<button onClick={openNewItem} className="inline-flex h-10 items-center gap-2 bg-primary px-4 text-xs font-black text-primary-foreground"><Plus className="h-4 w-4"/>New Item</button>}</>}{section==="purchase_orders"&&canManage&&<button onClick={openNewPO} className="inline-flex h-10 items-center gap-2 bg-primary px-4 text-xs font-black text-primary-foreground"><ShoppingCart className="h-4 w-4"/>New Purchase Order</button>}{section==="receiving"&&canManage&&<button onClick={openReceiving} className="inline-flex h-10 items-center gap-2 bg-primary px-4 text-xs font-black text-primary-foreground"><ClipboardCheck className="h-4 w-4"/>Receive PO</button>}{section==="returns"&&canFieldMove&&<button onClick={openReturn} className="inline-flex h-10 items-center gap-2 bg-primary px-4 text-xs font-black text-primary-foreground"><RotateCcw className="h-4 w-4"/>New Return</button>}{section==="reconciliation"&&canManage&&<button onClick={openStartReconciliation} className="inline-flex h-10 items-center gap-2 bg-primary px-4 text-xs font-black text-primary-foreground"><ClipboardCheck className="h-4 w-4"/>Start Reconciliation</button>}{section==="suppliers"&&canManage&&<button onClick={openNewSupplier} className="inline-flex h-10 items-center gap-2 bg-primary px-4 text-xs font-black text-primary-foreground"><Plus className="h-4 w-4"/>New Supplier</button>}{section==="movements"&&canFieldMove&&<button onClick={()=>openMovement()} className="inline-flex h-10 items-center gap-2 bg-primary px-4 text-xs font-black text-primary-foreground"><Plus className="h-4 w-4"/>Record Movement</button>}</div></div>{section==="stock"&&<><div className="mt-4 flex flex-wrap items-center gap-3 border border-border bg-card p-3"><div className="flex min-w-[280px] flex-1 items-center gap-2 border border-border bg-background px-3"><Search className="h-4 w-4 text-muted-foreground"/><input value={search} onChange={e=>setSearch(e.target.value)} className="h-10 w-full bg-transparent text-sm outline-none" placeholder="Search item, SKU, part number, barcode, category or manufacturer"/></div><Filter className="h-4 w-4 text-muted-foreground"/><select value={stockLocationFilter} onChange={e=>setStockLocationFilter(e.target.value)} className="h-10 border border-border bg-background px-3 text-xs font-bold"><option value="all">All locations</option>{locations.filter(location=>location.active).map(location=><option key={location.id} value={location.id}>{location.name}</option>)}</select><select value={stockFilter} onChange={e=>setStockFilter(e.target.value)} className="h-10 border border-border bg-background px-3 text-xs font-bold"><option value="all">All stock</option><option value="ok">Healthy</option><option value="low">Low stock</option><option value="out">Out of stock</option></select><select value={activeFilter} onChange={e=>setActiveFilter(e.target.value)} className="h-10 border border-border bg-background px-3 text-xs font-bold"><option value="active">Active items</option><option value="inactive">Inactive items</option><option value="all">All items</option></select></div><div className="mt-4">{loading&&!items.length?<div className="border border-border bg-card p-8 text-center text-sm text-muted-foreground">Loading inventory…</div>:<StockTable snapshots={filteredSnapshots} onOpen={openItem}/>}</div></>}{section==="purchase_orders"&&<div className="mt-4"><PurchaseOrdersTable orders={purchaseOrders} lines={poItems} supplierMap={supplierMap} onOpen={setSelectedPOId}/></div>}{section==="receiving"&&<div className="mt-4"><ReceiptsTable receipts={receipts} poMap={poMap} locationMap={locationMap}/></div>}{section==="returns"&&<div className="mt-4"><ReturnsTable returns={returns} locationMap={locationMap} supplierMap={supplierMap} workOrderMap={workOrderMap} profileMap={profileMap} customerMap={customerMap}/></div>}{section==="reconciliation"&&<div className="mt-4"><ReconciliationTable reconciliations={reconciliations} locationMap={locationMap} onOpen={setSelectedReconciliationId}/></div>}{section==="suppliers"&&<div className="mt-4"><SuppliersTable suppliers={suppliers} onEdit={openEditSupplier}/></div>}{section==="movements"&&<div className="mt-4"><MovementsTable movements={transactions} itemMap={itemMap} locationMap={locationMap} workOrderMap={workOrderMap} profileMap={profileMap}/></div>}</div></section></div>
 
-  {summaryView&&<InventorySummaryModal view={summaryView} snapshots={summarySnapshots} onOpenItem={id=>{setSummaryView(null);openItem(id)}} onClose={()=>setSummaryView(null)}/>} 
+  {summaryView&&!summaryLocationId&&<InventoryStockHealthLocationsModal view={summaryView} summaries={scopedLocationSummaries} onSelectLocation={setSummaryLocationId} onClose={()=>{setSummaryLocationId(null);setSummaryView(null)}}/>}
+  {summaryView&&summaryLocationId&&selectedSummaryLocation&&<InventoryStockHealthItemsModal view={summaryView} locationName={selectedSummaryLocation.name} rows={selectedSummaryHealthRows} canManage={canManage} onBack={()=>setSummaryLocationId(null)} onOpenItem={id=>{setSummaryLocationId(null);setSummaryView(null);openItem(id)}} onCreatePO={openPOForHealthRows} onClose={()=>{setSummaryLocationId(null);setSummaryView(null)}}/>}
   {selectedSnapshot&&<InventoryItemDetailModal snapshot={selectedSnapshot} tab={itemTab} transactions={transactions.filter(t=>t.inventory_item_id===selectedSnapshot.item.id)} locations={locations} suppliers={suppliers} itemSuppliers={itemSuppliers.filter(x=>x.inventory_item_id===selectedSnapshot.item.id)} purchaseOrders={purchaseOrders} poItems={poItems.filter(x=>x.inventory_item_id===selectedSnapshot.item.id)} workOrders={workOrders} notes={itemNotes.filter(n=>n.inventory_item_id===selectedSnapshot.item.id)} canManage={canManage} canAddNote={canAddNote} onTabChange={setItemTab} onEdit={openEditItem} onMovement={()=>openMovement(selectedSnapshot.item.id)} onAddNote={openNote} onClose={()=>setSelectedItemId(null)}/>} 
   {itemFormOpen&&<InventoryItemFormModal mode={itemFormMode} form={itemForm} suppliers={suppliers} error={itemFormError} saving={savingItem} onChange={setItemForm} onSave={()=>void saveItem()} onClose={()=>setItemFormOpen(false)}/>} 
   {movementOpen&&<StockMovementModal form={movementForm} items={items} locations={locations} profiles={profiles} workOrders={workOrders} canManage={canManage} error={movementError} saving={savingMovement} onChange={setMovementForm} onSave={()=>void saveMovement()} onClose={()=>setMovementOpen(false)}/>} 

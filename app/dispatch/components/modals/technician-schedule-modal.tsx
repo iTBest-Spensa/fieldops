@@ -10,6 +10,7 @@ export function TechnicianScheduleModal({
   scheduleView,
   selectedDate,
   onScheduleViewChange,
+  onManageActualTime,
   onClose,
 }: {
   selectedTech: Technician | null;
@@ -17,6 +18,7 @@ export function TechnicianScheduleModal({
   scheduleView: "today" | "week";
   selectedDate: string;
   onScheduleViewChange: (view: "today" | "week") => void;
+  onManageActualTime: (workOrderUuid: string) => void;
   onClose: () => void;
 }) {
   if (!selectedTech) return null;
@@ -37,7 +39,7 @@ export function TechnicianScheduleModal({
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <span className="text-sm text-muted-foreground">{selectedTech.role}</span>
                       <span
-                        className={`border px-2 py-1 text-[9px] font-black rounded-none ${
+                        className={`border px-2 py-1 text-[9px] font-black rounded-xl ${
                           selectedTech.statusTone
                         }`}
                       >
@@ -65,7 +67,7 @@ export function TechnicianScheduleModal({
                     <button
                       type="button"
                       onClick={() => onScheduleViewChange("today")}
-                      className={`border px-4 py-2 text-sm font-bold rounded-none ${
+                      className={`border px-4 py-2 text-sm font-bold rounded-xl ${
                         scheduleView === "today"
                           ? "border-primary bg-primary text-primary-foreground"
                           : "border-border bg-card"
@@ -76,7 +78,7 @@ export function TechnicianScheduleModal({
                     <button
                       type="button"
                       onClick={() => onScheduleViewChange("week")}
-                      className={`border px-4 py-2 text-sm font-bold rounded-none ${
+                      className={`border px-4 py-2 text-sm font-bold rounded-xl ${
                         scheduleView === "week"
                           ? "border-primary bg-primary text-primary-foreground"
                           : "border-border bg-card"
@@ -91,9 +93,9 @@ export function TechnicianScheduleModal({
 
                 <div className="flex-1 overflow-y-auto p-5">
                   {scheduleView === "today" ? (
-                    <TodaySchedule items={selectedTech.today} selectedDate={selectedDate} />
+                    <TodaySchedule items={selectedTech.today} selectedDate={selectedDate} onManageActualTime={onManageActualTime} />
                   ) : (
-                    <WeekSchedule week={selectedTech.week} selectedDate={selectedDate} />
+                    <WeekSchedule week={selectedTech.week} selectedDate={selectedDate} onManageActualTime={onManageActualTime} />
                   )}
                 </div>
               </section>

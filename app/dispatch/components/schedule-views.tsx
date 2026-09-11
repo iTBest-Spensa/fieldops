@@ -4,9 +4,11 @@ import { getWeekWindow, parseDateInput } from "../utils";
 export function TodaySchedule({
   items,
   selectedDate,
+  onManageActualTime,
 }: {
   items: ScheduleItem[];
   selectedDate: string;
+  onManageActualTime?: (workOrderUuid: string) => void;
 }) {
   const date = parseDateInput(selectedDate);
 
@@ -27,11 +29,24 @@ export function TodaySchedule({
           {items.map((item) => (
             <div key={`${item.time}-${item.id}`} className="relative pb-5 last:pb-0">
               <span className="absolute -left-[27px] top-1 h-3 w-3 rounded-full border-2 border-background bg-primary" />
-              <div className="text-xs font-bold text-muted-foreground">{item.time}</div>
-              <div className="mt-1 text-xs font-black text-primary">{item.id}</div>
-              <div className="text-sm font-semibold">{item.title}</div>
-              <div className="mt-0.5 text-[10px] font-bold text-muted-foreground">
-                {item.status}
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs font-bold text-muted-foreground">{item.time}</div>
+                  <div className="mt-1 text-xs font-black text-primary">{item.id}</div>
+                  <div className="text-sm font-semibold">{item.title}</div>
+                  <div className="mt-0.5 text-[10px] font-bold text-muted-foreground">
+                    {item.status}
+                  </div>
+                </div>
+                {item.workOrderUuid && onManageActualTime ? (
+                  <button
+                    type="button"
+                    onClick={() => onManageActualTime(item.workOrderUuid!)}
+                    className="rounded-xl border border-border px-3 py-2 text-[10px] font-black hover:bg-muted"
+                  >
+                    Manage Actual Time
+                  </button>
+                ) : null}
               </div>
             </div>
           ))}
@@ -44,9 +59,11 @@ export function TodaySchedule({
 export function WeekSchedule({
   week,
   selectedDate,
+  onManageActualTime,
 }: {
   week: Record<string, ScheduleItem[]>;
   selectedDate: string;
+  onManageActualTime?: (workOrderUuid: string) => void;
 }) {
   const labels = Object.keys(week);
   const range = getWeekWindow(selectedDate);
@@ -62,7 +79,7 @@ export function WeekSchedule({
       </div>
 
       {labels.map((day) => (
-        <div key={day} className="border border-border">
+        <div key={day} className="overflow-hidden rounded-xl border border-border">
           <div className="border-b border-border bg-muted/50 px-3 py-2 text-xs font-black">
             {day}
           </div>
@@ -70,10 +87,10 @@ export function WeekSchedule({
             {(week[day] ?? []).length === 0 ? (
               <div className="p-3 text-xs text-muted-foreground">No scheduled activity</div>
             ) : (
-              week[day].map((item) => (
+              (week[day] ?? []).map((item) => (
                 <div
                   key={`${day}-${item.time}-${item.id}`}
-                  className="grid grid-cols-[92px_1fr] gap-3 p-3"
+                  className="grid grid-cols-[92px_1fr_auto] gap-3 p-3"
                 >
                   <div className="text-[11px] font-bold text-muted-foreground">{item.time}</div>
                   <div>
@@ -83,6 +100,15 @@ export function WeekSchedule({
                       {item.status}
                     </div>
                   </div>
+                  {item.workOrderUuid && onManageActualTime ? (
+                    <button
+                      type="button"
+                      onClick={() => onManageActualTime(item.workOrderUuid!)}
+                      className="self-start rounded-xl border border-border px-3 py-2 text-[10px] font-black hover:bg-muted"
+                    >
+                      Manage Actual Time
+                    </button>
+                  ) : null}
                 </div>
               ))
             )}

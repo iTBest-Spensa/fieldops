@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import { ThemeProvider } from "next-themes";
+import { FieldOpsAutoFlow } from "@/components/fieldops-auto-flow";
 import "./globals.css";
 
 const defaultUrl = process.env.VERCEL_URL
@@ -32,6 +33,7 @@ export default function RootLayout({
           enableSystem={false}
           disableTransitionOnChange
         >
+          <FieldOpsAutoFlow />
           {children}
         </ThemeProvider>
       </body>

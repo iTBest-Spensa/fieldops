@@ -16,6 +16,7 @@ import {
   Users,
 } from "lucide-react";
 import { FieldOpsThemeToggle } from "@/components/fieldops-theme-toggle";
+import { CompanyBrand } from "@/components/company-brand";
 
 const navigation = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard", active: true },
@@ -35,10 +36,7 @@ export default function DashboardPage() {
     <main className="min-h-screen bg-background text-foreground">
       <div className="grid min-h-screen grid-cols-[236px_1fr]">
         <aside className="border-r border-border bg-card">
-          <div className="border-b border-border px-5 py-5">
-            <div className="text-lg font-black">FieldOps</div>
-            <div className="text-xs text-muted-foreground">Service Operations</div>
-          </div>
+          <CompanyBrand className="border-b border-border px-5 py-4" nameClassName="text-lg font-black" compact />
           <nav className="space-y-1 p-3">
             {navigation.map((item) => {
               const Icon = item.icon;

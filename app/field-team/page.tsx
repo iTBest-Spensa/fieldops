@@ -17,10 +17,10 @@ import {
   Settings,
   Truck,
   Users,
-  Wrench,
   Building2,
 } from "lucide-react";
 import { FieldOpsThemeToggle } from "@/components/fieldops-theme-toggle";
+import { CompanyBrand } from "@/components/company-brand";
 import { createClient } from "@/lib/supabase/client";
 import type {
   AddTechnicianForm,
@@ -782,7 +782,7 @@ export default function FieldTeamPage() {
       <ActionNotice notice={actionNotice} onClose={() => setActionNotice(null)} />
 
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-border bg-sidebar xl:flex">
-        <div className="flex h-[72px] items-center gap-3 border-b border-border px-4"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground"><Wrench className="h-5 w-5" /></div><div><div className="font-bold">FieldOps</div><div className="text-xs text-muted-foreground">Service Operations</div></div></div>
+        <CompanyBrand className="h-[72px] border-b border-border px-4" />
         <nav className="flex-1 space-y-1 p-3">{navigation.map((item) => { const Icon = item.icon; return <Link key={item.label} href={item.href} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${item.active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-sidebar-hover hover:text-foreground"}`}><Icon className="h-[18px] w-[18px]" />{item.label}</Link>; })}</nav>
       </aside>
 

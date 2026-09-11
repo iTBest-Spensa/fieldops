@@ -4,12 +4,12 @@ import { Boxes, CircleDollarSign, PackageX, TriangleAlert } from "lucide-react";
 import type { InventorySummaryView } from "../types";
 import { money } from "../utils";
 
-export function InventorySummaryCards({ totalItems, lowStock, outOfStock, inventoryValue, onView }: { totalItems: number; lowStock: number; outOfStock: number; inventoryValue: number; onView: (view: InventorySummaryView) => void }) {
+export function InventorySummaryCards({ totalItems, lowStock, outOfStock, inventoryValue, scopeLabel, onView }: { totalItems: number; lowStock: number; outOfStock: number; inventoryValue: number; scopeLabel: string; onView: (view: InventorySummaryView) => void }) {
   const cards = [
-    { key: "all" as const, label: "Total Items", value: String(totalItems), subtext: "Active and inactive stock records", icon: Boxes },
-    { key: "low" as const, label: "Low Stock", value: String(lowStock), subtext: "At or below reorder level", icon: TriangleAlert },
-    { key: "out" as const, label: "Out of Stock", value: String(outOfStock), subtext: "Zero available quantity", icon: PackageX },
-    { key: "value" as const, label: "Inventory Value", value: money(inventoryValue), subtext: "On-hand quantity × unit cost", icon: CircleDollarSign },
+    { key: "all" as const, label: "Total Items", value: String(totalItems), subtext: `Tracked item-location stock positions · ${scopeLabel}`, icon: Boxes },
+    { key: "low" as const, label: "Low Stock", value: String(lowStock), subtext: `At or below reorder level · ${scopeLabel}`, icon: TriangleAlert },
+    { key: "out" as const, label: "Out of Stock", value: String(outOfStock), subtext: `Zero available quantity · ${scopeLabel}`, icon: PackageX },
+    { key: "value" as const, label: "Inventory Value", value: money(inventoryValue), subtext: `On-hand quantity × unit cost · ${scopeLabel}`, icon: CircleDollarSign },
   ];
   return <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">{cards.map((card) => { const Icon = card.icon; return (
     <article key={card.key} className="border border-border bg-card p-4 shadow-sm">

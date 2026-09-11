@@ -18,7 +18,7 @@ export function AssignTechnicianModal(props: Props) {
         className="absolute inset-0 bg-black/55"
       />
 
-      <section className="relative z-10 w-full max-w-[620px] border border-border bg-background p-5 shadow-2xl">
+      <section className="relative z-10 w-full max-w-[620px] rounded-2xl border border-border bg-background p-5 shadow-2xl">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-xs font-semibold text-primary">
@@ -36,7 +36,7 @@ export function AssignTechnicianModal(props: Props) {
             type="button"
             disabled={savingAssignment}
             onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center border border-border"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border"
           >
             <X className="h-4 w-4" />
           </button>
@@ -64,7 +64,7 @@ export function AssignTechnicianModal(props: Props) {
                     technicianId: event.target.value,
                   }))
                 }
-                className="h-11 w-full border border-border bg-card px-3 text-sm outline-none focus:border-primary"
+                className="h-11 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-primary"
               >
                 {technicians.map((technician) => {
                   const availability =
@@ -149,7 +149,7 @@ export function AssignTechnicianModal(props: Props) {
                     date: event.target.value,
                   }))
                 }
-                className="h-11 w-full border border-border bg-card px-3 text-sm outline-none focus:border-primary"
+                className="h-11 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-primary"
               />
             </label>
 
@@ -167,7 +167,7 @@ export function AssignTechnicianModal(props: Props) {
                     startTime: event.target.value,
                   }))
                 }
-                className="h-11 w-full border border-border bg-card px-3 text-sm outline-none focus:border-primary"
+                className="h-11 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-primary"
               />
             </label>
 
@@ -183,7 +183,7 @@ export function AssignTechnicianModal(props: Props) {
                     endTime: event.target.value,
                   }))
                 }
-                className="h-11 w-full border border-border bg-card px-3 text-sm outline-none focus:border-primary"
+                className="h-11 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-primary"
               />
             </label>
           </div>
@@ -194,7 +194,7 @@ export function AssignTechnicianModal(props: Props) {
             type="button"
             disabled={savingAssignment}
             onClick={onClose}
-            className="h-10 border border-border px-4 text-sm font-bold"
+            className="h-10 rounded-xl border border-border px-4 text-sm font-bold"
           >
             Cancel
           </button>
@@ -202,7 +202,7 @@ export function AssignTechnicianModal(props: Props) {
             type="button"
             disabled={savingAssignment || technicians.length === 0}
             onClick={onSave}
-            className="h-10 bg-primary px-5 text-sm font-bold text-primary-foreground disabled:opacity-40"
+            className="h-10 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground disabled:opacity-40"
           >
             {savingAssignment ? "Assigning…" : "Save Assignment"}
           </button>

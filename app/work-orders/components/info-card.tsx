@@ -12,7 +12,7 @@ export function InfoCard({
   subvalue: string;
 }) {
   return (
-    <div className="border border-border p-4">
+    <div className="rounded-xl border border-border p-4">
       <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-muted-foreground">
         <Icon className="h-3.5 w-3.5 text-primary" />
         {label}

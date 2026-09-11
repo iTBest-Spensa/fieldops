@@ -17,9 +17,9 @@ import {
   Settings,
   Truck,
   Users,
-  Wrench,
 } from "lucide-react";
 import { FieldOpsThemeToggle } from "@/components/fieldops-theme-toggle";
+import { CompanyBrand } from "@/components/company-brand";
 import { createClient } from "@/lib/supabase/client";
 
 import type {
@@ -105,6 +105,9 @@ export default function Home() {
     useState<NewWorkOrderForm>(emptyNewWorkOrderForm);
   const [savingWorkOrder, setSavingWorkOrder] = useState(false);
   const [newWorkOrderError, setNewWorkOrderError] = useState<string | null>(null);
+  const [currentUserIsTechnician, setCurrentUserIsTechnician] = useState(false);
+  const [currentUserCanDispatch, setCurrentUserCanDispatch] = useState(false);
+  const [claimingJobUuid, setClaimingJobUuid] = useState<string | null>(null);
 
   const selectedJob =
     allJobs.find((job) => job.uuid === selectedJobUuid) ??
@@ -257,6 +260,15 @@ export default function Home() {
 
     const profiles = (profilesResult.data ?? []) as DbProfile[];
     const roles = (rolesResult.data ?? []) as DbRole[];
+    const currentUserRoles = roles
+      .filter((role) => role.user_id === authData.user.id)
+      .map((role) => role.role);
+    setCurrentUserIsTechnician(currentUserRoles.includes("technician"));
+    setCurrentUserCanDispatch(
+      currentUserRoles.some((role) =>
+        ["admin", "manager", "dispatcher"].includes(role)
+      )
+    );
     const techProfiles = (techProfilesResult.data ?? []) as DbTechProfile[];
     const customers = (customersResult.data ?? []) as DbCustomer[];
     const sites = (sitesResult.data ?? []) as DbSite[];
@@ -764,6 +776,28 @@ export default function Home() {
     }
   }
 
+  async function claimWaitingWork(job: WaitingJob) {
+    setError(null);
+    setClaimingJobUuid(job.uuid);
+
+    const { error: claimError } = await supabase.rpc(
+      "fieldops_claim_work_order",
+      {
+        p_work_order_id: job.uuid,
+      }
+    );
+
+    if (claimError) {
+      setError(claimError.message);
+      setClaimingJobUuid(null);
+      return;
+    }
+
+    setSelectedJobUuid(job.uuid);
+    setClaimingJobUuid(null);
+    await loadBoard();
+  }
+
   async function assignWork() {
     if (!assignmentModal) return;
 
@@ -893,15 +927,7 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-background text-foreground">
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-border bg-sidebar xl:flex">
-        <div className="flex h-[72px] items-center gap-3 border-b border-border px-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <Wrench className="h-5 w-5" />
-          </div>
-          <div>
-            <div className="font-bold">FieldOps</div>
-            <div className="text-xs text-muted-foreground">Service Operations</div>
-          </div>
-        </div>
+        <CompanyBrand className="h-[72px] border-b border-border px-4" />
 
         <nav className="flex-1 space-y-1 p-3">
           {navigation.map((item) => {
@@ -1026,7 +1052,11 @@ export default function Home() {
                   selectedJob={selectedJob}
                   focusJobUuid={focusJobUuid}
                   focusPulse={focusPulse}
+                  canSelfClaim={currentUserIsTechnician}
+                  canDragAssign={currentUserCanDispatch}
+                  claimingJobUuid={claimingJobUuid}
                   onSelectJob={setSelectedJobUuid}
+                  onClaimJob={(job) => void claimWaitingWork(job)}
                 />
 
                 <TechnicianTracksPanel
@@ -1069,6 +1099,11 @@ export default function Home() {
         scheduleView={scheduleView}
         selectedDate={selectedDate}
         onScheduleViewChange={setScheduleView}
+        onManageActualTime={(workOrderUuid) => {
+          const params = new URLSearchParams({ focus: workOrderUuid, time: "1", return: "dispatch", date: selectedDate });
+          if (selectedTech?.uuid) params.set("tech", selectedTech.uuid);
+          window.location.assign(`/work-orders?${params.toString()}`);
+        }}
         onClose={() => setSelectedTechUuid(null)}
       />
 

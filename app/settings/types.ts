@@ -11,6 +11,7 @@ export type DbSettings = {
   id: number;
   company_name: string;
   legal_name: string | null;
+  logo_path: string | null;
   business_number: string | null;
   phone: string | null;
   email: string | null;
@@ -29,6 +30,12 @@ export type DbSettings = {
   default_work_order_duration_minutes: number;
   default_payment_terms_days: number;
   default_tax_rate: number;
+  default_customer_billing_rate: number;
+  default_technician_pay_rate: number;
+  minimum_billable_minutes: number;
+  travel_billing_mode: "time" | "distance" | "none";
+  travel_hourly_rate: number | null;
+  travel_per_km_rate: number;
   invoice_footer: string | null;
   po_approval_required: boolean;
   low_stock_monitoring_enabled: boolean;
@@ -45,6 +52,7 @@ export type DbSettings = {
 export type SettingsForm = {
   companyName: string;
   legalName: string;
+  logoPath: string;
   businessNumber: string;
   phone: string;
   email: string;
@@ -63,6 +71,12 @@ export type SettingsForm = {
   defaultWorkOrderDurationMinutes: string;
   defaultPaymentTermsDays: string;
   defaultTaxRatePercent: string;
+  defaultCustomerBillingRate: string;
+  defaultTechnicianPayRate: string;
+  minimumBillableMinutes: string;
+  travelBillingMode: "time" | "distance" | "none";
+  travelHourlyRate: string;
+  travelPerKmRate: string;
   invoiceFooter: string;
   poApprovalRequired: boolean;
   lowStockMonitoringEnabled: boolean;

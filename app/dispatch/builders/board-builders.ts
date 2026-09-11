@@ -768,6 +768,7 @@ function buildScheduleForDate(args: {
       id: workOrder.work_order_number,
       title: workOrder.title,
       status: statusColors[mapWorkOrderStatus(workOrder.status)].label.toUpperCase(),
+      workOrderUuid: workOrder.id,
       sortTime: start.getTime(),
     });
   }
