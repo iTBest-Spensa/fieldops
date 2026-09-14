@@ -19,6 +19,8 @@ import {
   snapHour,
 } from "../utils";
 
+type TrackDensity = "compact" | "detailed";
+
 type RenderTrackItem =
   | { type: "activity"; segment: Segment; originalIndex: number }
   | { type: "gap"; start: number; end: number; originalIndex: number };
@@ -108,7 +110,9 @@ function HoverHintPortal({ hint }: { hint: HoverHintData | null }) {
         {hint.status}
       </div>
       <div className="mt-1 text-sm font-bold">{hint.title}</div>
-      <div className="mt-0.5 text-[11px] font-semibold text-muted-foreground">{hint.id}</div>
+      <div className="mt-0.5 text-[11px] font-semibold text-muted-foreground">
+        {hint.id}
+      </div>
 
       {(hint.customer || hint.place || hint.priority) && (
         <div className="mt-3 space-y-1 text-[10px]">
@@ -144,7 +148,9 @@ function HoverHintPortal({ hint }: { hint: HoverHintData | null }) {
         </div>
         <div className="col-span-2">
           <div className="text-muted-foreground">Duration</div>
-          <div className="mt-0.5 font-bold">{durationLabel(hint.start, hint.end)}</div>
+          <div className="mt-0.5 font-bold">
+            {durationLabel(hint.start, hint.end)}
+          </div>
         </div>
       </div>
 
@@ -183,21 +189,28 @@ export function SingleLineTimeline({
   currentHour,
   overtimeCount,
   onOpenOvertime,
+  density = "detailed",
 }: {
   track: Segment[];
   technicianId: string;
-  onDropJob: (payload: DragJobPayload, techUuid: string, dropHour: number) => void;
+  onDropJob: (
+    payload: DragJobPayload,
+    techUuid: string,
+    dropHour: number
+  ) => void;
   focusJobUuid: string | null;
   focusPulse: boolean;
   currentHour: number | null;
   overtimeCount: number;
   onOpenOvertime: () => void;
+  density?: TrackDensity;
 }) {
   const [hint, setHint] = useState<HoverHintData | null>(null);
   const [dragHour, setDragHour] = useState<number | null>(null);
 
   const startHour = BOARD_START_HOUR;
   const totalHours = BOARD_TOTAL_HOURS;
+
   const liveTrack = track.map((segment) => {
     if (!segment.openActual || currentHour === null) return segment;
 
@@ -207,13 +220,30 @@ export function SingleLineTimeline({
       time: `${formatClock(segment.start)}–NOW`,
     };
   });
+
   const items = buildTrackItems(liveTrack);
-  const hasOverrun = liveTrack.some(
-    (segment) => segment.overrun
-  );
   const hasSecondaryLane = liveTrack.some(
     (segment) => segment.secondaryLane
   );
+
+  const compact = density === "compact";
+  const rootMinHeight = compact
+    ? hasSecondaryLane
+      ? 96
+      : 64
+    : hasSecondaryLane
+    ? 174
+    : 118;
+  const innerHeight = compact
+    ? hasSecondaryLane
+      ? 84
+      : 52
+    : hasSecondaryLane
+    ? 154
+    : 100;
+  const mainLineTop = compact ? 25 : 47;
+  const secondaryLineTop = compact ? 59 : 107;
+  const rootPadding = compact ? "px-2 py-1.5" : "px-3 py-2";
 
   function openHint(
     target: HTMLElement,
@@ -244,9 +274,8 @@ export function SingleLineTimeline({
 
   return (
     <div
-      className={`relative overflow-visible px-3 py-2 ${
-        hasSecondaryLane ? "min-h-[174px]" : "min-h-[118px]"
-      }`}
+      className={`relative overflow-visible ${rootPadding}`}
+      style={{ minHeight: rootMinHeight }}
       onDragOver={(event) => {
         event.preventDefault();
         const rect = event.currentTarget.getBoundingClientRect();
@@ -256,11 +285,16 @@ export function SingleLineTimeline({
       onDrop={(event) => {
         event.preventDefault();
         const rect = event.currentTarget.getBoundingClientRect();
-        const dropHour = snapHour(hourFromPointer(event.clientX, rect), 15);
+        const dropHour = snapHour(
+          hourFromPointer(event.clientX, rect),
+          15
+        );
         const fieldOpsPayload = event.dataTransfer.getData(
           "application/x-fieldops-job"
         );
-        const fallbackJobUuid = event.dataTransfer.getData("text/plain");
+        const fallbackJobUuid =
+          event.dataTransfer.getData("text/plain");
+
         setDragHour(null);
 
         let payload: DragJobPayload | null = null;
@@ -292,7 +326,9 @@ export function SingleLineTimeline({
             className="absolute bottom-0 top-0 border-l border-border/30"
             style={{
               left: `${
-                ((hour - BOARD_START_HOUR) / BOARD_TOTAL_HOURS) * 100
+                ((hour - BOARD_START_HOUR) /
+                  BOARD_TOTAL_HOURS) *
+                100
               }%`,
             }}
           />
@@ -301,8 +337,12 @@ export function SingleLineTimeline({
 
       {dragHour !== null && (
         <div
-          className="pointer-events-none absolute bottom-2 top-2 z-40 w-px bg-primary"
-          style={{ left: `${((dragHour - startHour) / totalHours) * 100}%` }}
+          className="pointer-events-none absolute bottom-1 top-1 z-40 w-px bg-primary"
+          style={{
+            left: `${
+              ((dragHour - startHour) / totalHours) * 100
+            }%`,
+          }}
         >
           <div className="absolute -top-1 -translate-x-1/2 whitespace-nowrap bg-primary px-1 py-0.5 text-[8px] font-black text-primary-foreground">
             {formatClock(dragHour)}
@@ -310,11 +350,17 @@ export function SingleLineTimeline({
         </div>
       )}
 
-      <div className={`relative ${hasSecondaryLane ? "h-[154px]" : "h-[100px]"}`}>
-        <div className="absolute left-0 right-0 top-[49px] h-px bg-border" />
+      <div className="relative" style={{ height: innerHeight }}>
+        <div
+          className="absolute left-0 right-0 h-px bg-border"
+          style={{ top: mainLineTop + 2 }}
+        />
 
         {hasSecondaryLane && (
-          <div className="absolute left-0 right-0 top-[109px] border-t border-dashed border-border/60" />
+          <div
+            className="absolute left-0 right-0 border-t border-dashed border-border/60"
+            style={{ top: secondaryLineTop + 2 }}
+          />
         )}
 
         {overtimeCount > 0 && (
@@ -334,9 +380,12 @@ export function SingleLineTimeline({
 
         {items.map((item, index) => {
           if (item.type === "gap") {
-            const left = ((item.start - startHour) / totalHours) * 100;
-            const width = ((item.end - item.start) / totalHours) * 100;
-            const tinyGap = (item.end - item.start) * 60 <= 10;
+            const left =
+              ((item.start - startHour) / totalHours) * 100;
+            const width =
+              ((item.end - item.start) / totalHours) * 100;
+            const tinyGap =
+              (item.end - item.start) * 60 <= 10;
 
             return (
               <div
@@ -354,25 +403,48 @@ export function SingleLineTimeline({
                     status: "Gap",
                     start: item.start,
                     end: item.end,
-                    detail: "No activity is scheduled in this interval.",
+                    detail:
+                      "No activity is scheduled in this interval.",
                   })
                 }
                 onMouseLeave={() => setHint(null)}
               >
-                <span className="absolute left-0 right-0 top-[47px] border-t-2 border-dashed border-slate-500/80" />
-                <span className="absolute left-0 top-[43px] h-[12px] w-[12px] -translate-x-1/2 rounded-full border-2 border-background bg-slate-500" />
-                <span className="absolute right-0 top-[43px] h-[12px] w-[12px] translate-x-1/2 rounded-full border-2 border-background bg-slate-500" />
+                <span
+                  className="absolute left-0 right-0 border-t-2 border-dashed border-slate-500/80"
+                  style={{ top: mainLineTop }}
+                />
+                <span
+                  className="absolute left-0 h-[10px] w-[10px] -translate-x-1/2 rounded-full border-2 border-background bg-slate-500"
+                  style={{ top: mainLineTop - 4 }}
+                />
+                <span
+                  className="absolute right-0 h-[10px] w-[10px] translate-x-1/2 rounded-full border-2 border-background bg-slate-500"
+                  style={{ top: mainLineTop - 4 }}
+                />
 
-                <span className="absolute left-1/2 top-[60px] w-full -translate-x-1/2 overflow-hidden px-0.5 text-center text-[7px] font-black uppercase text-slate-500">
-                  <span className="block truncate">{durationLabel(item.start, item.end)} gap</span>
-                </span>
+                {!compact && (
+                  <span
+                    className="absolute left-1/2 w-full -translate-x-1/2 overflow-hidden px-0.5 text-center text-[7px] font-black uppercase text-slate-500"
+                    style={{ top: mainLineTop + 13 }}
+                  >
+                    <span className="block truncate">
+                      {durationLabel(item.start, item.end)} gap
+                    </span>
+                  </span>
+                )}
               </div>
             );
           }
 
           const segment = item.segment;
-          const left = ((segment.start - startHour) / totalHours) * 100;
-          const width = ((segment.end - segment.start) / totalHours) * 100;
+          const left =
+            ((segment.start - startHour) / totalHours) * 100;
+          const width =
+            ((segment.end - segment.start) / totalHours) *
+            100;
+
+          // Track color always comes from the activity status.
+          // Overrun is the only exception and remains red by design.
           const colors = segment.overrun
             ? {
                 line: "bg-rose-500",
@@ -382,45 +454,71 @@ export function SingleLineTimeline({
             : statusColors[segment.status];
 
           const topLabel = item.originalIndex % 2 === 0;
-
-          // The original scheduled work and its RED overrun use the
-          // exact same main lane so the red line visually continues
-          // from the scheduled end point.
           const lineTop = segment.secondaryLane
-            ? 107
-            : 47;
-
-          const dotTop = lineTop - 4;
+            ? secondaryLineTop
+            : mainLineTop;
+          const dotTop = lineTop - (compact ? 3 : 4);
 
           const detail =
             segment.status === "available"
               ? "Technician is available for dispatch during this interval."
               : segment.status === "break"
-              ? segment.notes ?? "Non-job time recorded on the technician schedule."
+              ? segment.notes ??
+                "Non-job time recorded on the technician schedule."
               : segment.status === "travelling"
-              ? segment.notes ?? "Technician is travelling between assignments."
+              ? segment.notes ??
+                "Technician is travelling between assignments."
               : segment.workOrderUuid
               ? undefined
-              : segment.notes ?? "Scheduled activity on this technician's daily track.";
+              : segment.notes ??
+                "Scheduled activity on this technician's daily track.";
 
           const canMoveJob =
             Boolean(segment.workOrderUuid) &&
             segment.status !== "complete" &&
             !segment.overrun;
-          const focused = segment.workOrderUuid === focusJobUuid;
+          const focused =
+            segment.workOrderUuid === focusJobUuid;
+
+          const labelTop = segment.secondaryLane
+            ? lineTop + (compact ? 7 : 10)
+            : segment.overrun
+            ? compact
+              ? 0
+              : 4
+            : topLabel
+            ? undefined
+            : lineTop + (compact ? 6 : 11);
+
+          const labelBottom =
+            !segment.secondaryLane &&
+            !segment.overrun &&
+            topLabel
+              ? innerHeight -
+                lineTop +
+                (compact ? 2 : 4)
+              : undefined;
 
           return (
             <div
               key={`${segment.id}-${segment.time}-${index}`}
               data-fieldops-work-order={
-                segment.workOrderUuid ? segment.workOrderUuid : undefined
+                segment.workOrderUuid
+                  ? segment.workOrderUuid
+                  : undefined
               }
               draggable={canMoveJob}
-              title={canMoveJob ? "Drag to move or reschedule this work order" : undefined}
+              title={
+                canMoveJob
+                  ? "Drag to move or reschedule this work order"
+                  : undefined
+              }
               className={`absolute top-0 h-full text-left ${
                 focused && focusPulse ? "z-50" : "z-30"
               } ${
-                canMoveJob ? "cursor-grab active:cursor-grabbing" : "cursor-help"
+                canMoveJob
+                  ? "cursor-grab active:cursor-grabbing"
+                  : "cursor-help"
               } ${
                 focused && focusPulse
                   ? "ring-2 ring-primary ring-offset-2 ring-offset-background animate-pulse"
@@ -431,7 +529,10 @@ export function SingleLineTimeline({
                 width: `${Math.max(width, 1.5)}%`,
               }}
               onDragStart={(event) => {
-                if (!canMoveJob || !segment.workOrderUuid) {
+                if (
+                  !canMoveJob ||
+                  !segment.workOrderUuid
+                ) {
                   event.preventDefault();
                   return;
                 }
@@ -450,7 +551,10 @@ export function SingleLineTimeline({
                   "application/x-fieldops-job",
                   JSON.stringify(payload)
                 );
-                event.dataTransfer.setData("text/plain", segment.workOrderUuid);
+                event.dataTransfer.setData(
+                  "text/plain",
+                  segment.workOrderUuid
+                );
               }}
               onMouseEnter={(event) =>
                 openHint(event.currentTarget, {
@@ -467,7 +571,8 @@ export function SingleLineTimeline({
                   place: segment.place,
                   priority: segment.priority,
                   description: segment.workOrderUuid
-                    ? segment.description ?? "No description provided."
+                    ? segment.description ??
+                      "No description provided."
                     : undefined,
                   detail,
                 })
@@ -475,56 +580,66 @@ export function SingleLineTimeline({
               onMouseLeave={() => setHint(null)}
             >
               {focused && focusPulse && (
-                <span className="pointer-events-none absolute left-1/2 top-[2px] z-50 -translate-x-1/2 whitespace-nowrap border border-primary bg-background px-1.5 py-0.5 text-[8px] font-black text-primary animate-pulse">
+                <span className="pointer-events-none absolute left-1/2 top-0 z-50 -translate-x-1/2 whitespace-nowrap border border-primary bg-background px-1.5 py-0.5 text-[8px] font-black text-primary animate-pulse">
                   THIS JOB
                 </span>
               )}
 
               <span
-                className={`absolute left-0 right-0 h-[4px] ${colors.line}`}
-                style={{ top: `${lineTop}px` }}
+                className={`absolute left-0 right-0 ${
+                  compact ? "h-[3px]" : "h-[4px]"
+                } ${colors.line}`}
+                style={{ top: lineTop }}
               />
 
               <span
-                className={`absolute left-0 h-[12px] w-[12px] -translate-x-1/2 rounded-full border-2 border-background ${colors.line}`}
-                style={{ top: `${dotTop}px` }}
+                className={`absolute left-0 -translate-x-1/2 rounded-full border-2 border-background ${colors.line} ${
+                  compact
+                    ? "h-[9px] w-[9px]"
+                    : "h-[12px] w-[12px]"
+                }`}
+                style={{ top: dotTop }}
               />
               <span
-                className={`absolute right-0 h-[12px] w-[12px] translate-x-1/2 rounded-full border-2 border-background ${colors.line}`}
-                style={{ top: `${dotTop}px` }}
+                className={`absolute right-0 translate-x-1/2 rounded-full border-2 border-background ${colors.line} ${
+                  compact
+                    ? "h-[9px] w-[9px]"
+                    : "h-[12px] w-[12px]"
+                }`}
+                style={{ top: dotTop }}
               />
 
               <span
                 className="absolute left-1/2 w-full -translate-x-1/2 overflow-hidden px-1"
                 style={{
-                  top: segment.secondaryLane
-                    ? "117px"
-                    : segment.overrun
-                    ? "4px"
-                    : topLabel
-                    ? undefined
-                    : "58px",
-                  bottom:
-                    !segment.secondaryLane &&
-                    !segment.overrun &&
-                    topLabel
-                      ? "57px"
-                      : undefined,
+                  top: labelTop,
+                  bottom: labelBottom,
                 }}
               >
-                <span className={`block truncate text-[8px] font-black uppercase ${colors.text}`}>
+                <span
+                  className={`block truncate font-black uppercase ${colors.text} ${
+                    compact ? "text-[7px]" : "text-[8px]"
+                  }`}
+                >
                   {segment.overrun
                     ? "OVERRUN"
                     : segment.actual
                     ? `ACTUAL ${colors.label}`
                     : colors.label}
                 </span>
-                <span className="block truncate text-[9px] font-semibold">
+                <span
+                  className={`block truncate font-semibold ${
+                    compact ? "text-[8px]" : "text-[9px]"
+                  }`}
+                >
                   {segment.title}
                 </span>
-                <span className="block truncate whitespace-nowrap text-[8px] text-muted-foreground">
-                  {segment.time}
-                </span>
+
+                {!compact && (
+                  <span className="block truncate whitespace-nowrap text-[8px] text-muted-foreground">
+                    {segment.time}
+                  </span>
+                )}
               </span>
             </div>
           );
@@ -534,5 +649,4 @@ export function SingleLineTimeline({
       <HoverHintPortal hint={hint} />
     </div>
   );
-
 }

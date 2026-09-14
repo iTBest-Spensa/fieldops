@@ -81,14 +81,6 @@ export type OvertimeItem = {
   sortTime: number;
 };
 
-export type DispatchFitDetails = {
-  score: number;
-  skillsMatch: string;
-  scheduleFit: string;
-  serviceArea: string;
-  workload: string;
-  timeConflict: string;
-};
 export type Technician = {
   uuid: string;
   initials: string;
@@ -97,7 +89,6 @@ export type Technician = {
   status: string;
   statusTone: string;
   confidenceByJob: Record<string, number>;
-  dispatchFitByJob: Record<string, DispatchFitDetails>;
   confidence: number;
   rank: number;
   track: Segment[];

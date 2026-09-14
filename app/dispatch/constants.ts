@@ -1,7 +1,7 @@
 import type { ActivityStatus, NewWorkOrderForm } from "./types";
 
-export const BOARD_START_HOUR = 7;
-export const BOARD_END_HOUR = 17;
+export const BOARD_START_HOUR = 8;
+export const BOARD_END_HOUR = 16;
 export const BOARD_TOTAL_HOURS = BOARD_END_HOUR - BOARD_START_HOUR;
 export const boardHours = Array.from(
   { length: BOARD_TOTAL_HOURS + 1 },

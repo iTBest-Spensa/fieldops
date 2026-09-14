@@ -95,7 +95,15 @@ export type DbPurchaseOrder = {
   id: string;
   po_number: string;
   supplier_id: string;
-  status: "draft" | "approved" | "ordered" | "partially_received" | "received" | "closed" | "cancelled";
+  destination_location_id: string | null;
+  status:
+    | "draft"
+    | "approved"
+    | "ordered"
+    | "partially_received"
+    | "received"
+    | "closed"
+    | "cancelled";
   ordered_at: string | null;
   expected_date: string | null;
   shipping_amount: number;
@@ -238,7 +246,14 @@ export type DbProfile = {
 
 export type DbRole = { user_id: string; role: string };
 export type DbCustomer = { id: string; name: string; status?: string | null };
-export type DbSite = { id: string; customer_id: string; name: string; city: string | null; province_state: string | null; active?: boolean | null };
+export type DbSite = {
+  id: string;
+  customer_id: string;
+  name: string;
+  city: string | null;
+  province_state: string | null;
+  active?: boolean | null;
+};
 
 export type StockBalance = {
   itemId: string;
@@ -257,14 +272,16 @@ export type InventoryItemSnapshot = {
   scopeLocationName?: string | null;
 };
 
-
-
 export type InventoryLocationItemHealth = {
   location: DbInventoryLocation;
   item: DbInventoryItem;
   onHand: number;
   stockStatus: "ok" | "low" | "out";
   value: number;
+  replenishmentStatus?: "needs_po" | "waiting_approval" | "on_order";
+  replenishmentCoveredQuantity?: number;
+  replenishmentTargetQuantity?: number;
+  replenishmentPONumbers?: string[];
 };
 
 export type InventoryLocationHealthSummary = {
@@ -337,9 +354,56 @@ export type MovementForm = {
   notes: string;
 };
 
-export type POLineForm = { itemId: string; quantity: string; unitCost: string; supplierSku: string };
-export type PurchaseOrderForm = { supplierId: string; expectedDate: string; shippingAmount: string; taxAmount: string; notes: string; lines: POLineForm[] };
-export type ReceivingLineForm = { purchaseOrderItemId: string; inventoryItemId: string; quantityReceived: string; quantityDamaged: string; unitCost: string };
-export type ReceivingForm = { purchaseOrderId: string; locationId: string; receivedAt: string; packingSlip: string; notes: string; lines: ReceivingLineForm[] };
-export type ReturnLineForm = { itemId: string; quantity: string; condition: "restockable" | "damaged" | "scrap"; unitCost: string };
-export type ReturnForm = { returnType: DbInventoryReturn["return_type"]; supplierId: string; purchaseOrderId: string; workOrderId: string; technicianId: string; customerId: string; locationId: string; reason: string; notes: string; lines: ReturnLineForm[] };
+export type POLineForm = {
+  itemId: string;
+  quantity: string;
+  unitCost: string;
+  supplierSku: string;
+};
+
+export type PurchaseOrderForm = {
+  destinationLocationId: string;
+  supplierId: string;
+  expectedDate: string;
+  shippingAmount: string;
+  taxAmount: string;
+  notes: string;
+  lines: POLineForm[];
+};
+
+export type ReceivingLineForm = {
+  purchaseOrderItemId: string;
+  inventoryItemId: string;
+  quantityReceived: string;
+  quantityDamaged: string;
+  unitCost: string;
+};
+
+export type ReceivingForm = {
+  purchaseOrderId: string;
+  locationId: string;
+  receivedAt: string;
+  packingSlip: string;
+  notes: string;
+  lines: ReceivingLineForm[];
+};
+
+export type ReturnLineForm = {
+  itemId: string;
+  quantity: string;
+  condition: "restockable" | "damaged" | "scrap";
+  unitCost: string;
+};
+
+export type ReturnForm = {
+  returnType: DbInventoryReturn["return_type"];
+  supplierId: string;
+  purchaseOrderId: string;
+  workOrderId: string;
+  technicianId: string;
+  customerId: string;
+  locationId: string;
+  reason: string;
+  notes: string;
+  lines: ReturnLineForm[];
+};

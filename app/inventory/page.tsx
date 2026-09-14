@@ -65,7 +65,7 @@ const itemSelect = "id,sku,part_number,barcode,name,description,category,manufac
 const locationSelect = "id,name,code,location_type,site_id,technician_id,vehicle_identifier,notes,active,created_at,updated_at";
 const transactionSelect = "id,inventory_item_id,location_id,work_order_id,technician_id,supplier_id,purchase_order_id,receipt_id,return_id,reconciliation_id,from_location_id,to_location_id,transfer_group_id,transaction_type,quantity,unit_cost,reference,notes,created_by,created_at";
 const supplierSelect = "id,supplier_number,name,contact_name,email,phone,website,address1,address2,city,province_state,postal_code,country,payment_terms_days,notes,active,created_at,updated_at";
-const poSelect = "id,po_number,supplier_id,status,ordered_at,expected_date,shipping_amount,tax_amount,notes,created_by,approved_by,approved_at,created_at,updated_at";
+const poSelect = "id,po_number,supplier_id,destination_location_id,status,ordered_at,expected_date,shipping_amount,tax_amount,notes,created_by,approved_by,approved_at,created_at,updated_at";
 const poItemSelect = "id,purchase_order_id,inventory_item_id,description,supplier_sku,quantity_ordered,quantity_received,unit_cost,created_at,updated_at";
 const receiptSelect = "id,receipt_number,purchase_order_id,location_id,received_at,packing_slip,status,notes,created_by,created_at";
 const receiptItemSelect = "id,receipt_id,purchase_order_item_id,inventory_item_id,quantity_received,quantity_damaged,unit_cost,created_at";
@@ -266,19 +266,79 @@ export default function InventoryPage() {
     }));
   },[activeStockLocations,activeTrackedItems,transactions]);
 
+  // Replenishment coverage is location-specific. Draft coverage becomes
+  // "Waiting for approval"; approved/ordered/partially received coverage is
+  // considered committed and is removed from the reorder-action list.
+  const replenishmentHealth = useMemo<InventoryLocationItemHealth[]>(()=>locationItemHealth.map(row=>{
+    const openPOs=purchaseOrders.filter(po=>
+      po.destination_location_id===row.location.id &&
+      ["draft","approved","ordered","partially_received"].includes(po.status)
+    );
+
+    let draftCoverage=0;
+    let committedCoverage=0;
+    const draftNumbers:string[]=[];
+    const committedNumbers:string[]=[];
+
+    for(const po of openPOs){
+      const remaining=poItems
+        .filter(line=>line.purchase_order_id===po.id&&line.inventory_item_id===row.item.id)
+        .reduce((sum,line)=>sum+Math.max(0,Number(line.quantity_ordered)-Number(line.quantity_received)),0);
+
+      if(remaining<=0) continue;
+
+      if(po.status==="draft"){
+        draftCoverage+=remaining;
+        draftNumbers.push(po.po_number);
+      }else{
+        committedCoverage+=remaining;
+        committedNumbers.push(po.po_number);
+      }
+    }
+
+    const target=suggestedOrderQuantity(row);
+    const totalCoverage=draftCoverage+committedCoverage;
+    const replenishmentStatus:InventoryLocationItemHealth["replenishmentStatus"]=
+      committedCoverage>=target
+        ?"on_order"
+        : totalCoverage>=target&&draftCoverage>0
+        ?"waiting_approval"
+        :"needs_po";
+
+    return {
+      ...row,
+      replenishmentStatus,
+      replenishmentCoveredQuantity:totalCoverage,
+      replenishmentTargetQuantity:target,
+      replenishmentPONumbers:
+        replenishmentStatus==="on_order"
+          ?committedNumbers
+          :replenishmentStatus==="waiting_approval"
+          ?draftNumbers
+          :[...committedNumbers,...draftNumbers],
+    };
+  }),[locationItemHealth,purchaseOrders,poItems]);
+
+  const actionLocationHealth = useMemo(
+    ()=>replenishmentHealth.filter(row=>row.replenishmentStatus!=="on_order"),
+    [replenishmentHealth]
+  );
+
   const locationHealthSummaries = useMemo<InventoryLocationHealthSummary[]>(()=>activeStockLocations.map(location=>{
-    const rows=locationItemHealth.filter(row=>row.location.id===location.id);
+    const physicalRows=locationItemHealth.filter(row=>row.location.id===location.id);
+    const actionRows=actionLocationHealth.filter(row=>row.location.id===location.id);
     return {
       location,
-      totalItems: rows.length,
-      lowStock: rows.filter(row=>row.stockStatus==="low").length,
-      outOfStock: rows.filter(row=>row.stockStatus==="out").length,
-      healthy: rows.filter(row=>row.stockStatus==="ok").length,
-      inventoryValue: rows.reduce((sum,row)=>sum+row.value,0),
+      totalItems: physicalRows.length,
+      lowStock: actionRows.filter(row=>row.stockStatus==="low").length,
+      outOfStock: actionRows.filter(row=>row.stockStatus==="out").length,
+      healthy: physicalRows.filter(row=>row.stockStatus==="ok").length,
+      inventoryValue: physicalRows.reduce((sum,row)=>sum+row.value,0),
     };
-  }),[activeStockLocations,locationItemHealth]);
+  }),[activeStockLocations,locationItemHealth,actionLocationHealth]);
 
   const scopedLocationHealth = useMemo(()=>stockLocationFilter==="all"?locationItemHealth:locationItemHealth.filter(row=>row.location.id===stockLocationFilter),[locationItemHealth,stockLocationFilter]);
+  const scopedActionLocationHealth = useMemo(()=>stockLocationFilter==="all"?actionLocationHealth:actionLocationHealth.filter(row=>row.location.id===stockLocationFilter),[actionLocationHealth,stockLocationFilter]);
   const scopedLocationSummaries = useMemo(()=>stockLocationFilter==="all"?locationHealthSummaries:locationHealthSummaries.filter(row=>row.location.id===stockLocationFilter),[locationHealthSummaries,stockLocationFilter]);
 
   const scopedSnapshots = useMemo(()=>{
@@ -334,17 +394,17 @@ export default function InventoryPage() {
     });
   },[scopedSnapshots,search,activeFilter,stockFilter,stockLocationFilter,locationItemHealth,transactions]);
   const totalStockPositions=scopedLocationHealth.length;
-  const lowStock=scopedLocationHealth.filter(row=>row.stockStatus==="low").length;
-  const outOfStock=scopedLocationHealth.filter(row=>row.stockStatus==="out").length;
+  const lowStock=scopedActionLocationHealth.filter(row=>row.stockStatus==="low").length;
+  const outOfStock=scopedActionLocationHealth.filter(row=>row.stockStatus==="out").length;
   const inventoryValue=scopedLocationHealth.reduce((sum,row)=>sum+row.value,0);
   const selectedSummaryLocation = summaryLocationId?stockLocationMap.get(summaryLocationId)??null:null;
   const selectedSummaryHealthRows = useMemo(()=>{
     if(!summaryLocationId||!summaryView)return [];
-    const rows=locationItemHealth.filter(row=>row.location.id===summaryLocationId);
-    if(summaryView==="low")return rows.filter(row=>row.stockStatus==="low");
-    if(summaryView==="out")return rows.filter(row=>row.stockStatus==="out");
+    const rows=replenishmentHealth.filter(row=>row.location.id===summaryLocationId);
+    if(summaryView==="low")return rows.filter(row=>row.stockStatus==="low"&&row.replenishmentStatus!=="on_order");
+    if(summaryView==="out")return rows.filter(row=>row.stockStatus==="out"&&row.replenishmentStatus!=="on_order");
     return rows;
-  },[locationItemHealth,summaryLocationId,summaryView]);
+  },[replenishmentHealth,summaryLocationId,summaryView]);
 
   const selectedSnapshot=selectedItemId?snapshots.find(s=>s.item.id===selectedItemId)??null:null;
   const selectedPO=selectedPOId?purchaseOrders.find(p=>p.id===selectedPOId)??null:null;
@@ -369,8 +429,19 @@ export default function InventoryPage() {
   function openNewPO(){setPOForm(emptyPurchaseOrderForm);setPOError(null);setPOOpen(true);}
   function openSummary(view:InventorySummaryView){setSummaryLocationId(null);setSummaryView(view);}
   function openPOForHealthRows(rows:InventoryLocationItemHealth[]){
-    if(!rows.length)return;
-    const uniqueRows=[...new Map(rows.map(row=>[row.item.id,row] as const)).values()];
+    const actionable=rows.filter(row=>row.replenishmentStatus!=="waiting_approval"&&row.replenishmentStatus!=="on_order");
+    if(!actionable.length){
+      showNotice("info","These items are already covered by an open purchase order.");
+      return;
+    }
+
+    const locationIds=[...new Set(actionable.map(row=>row.location.id))];
+    if(locationIds.length!==1){
+      showNotice("error","Create replenishment POs one stock location at a time.");
+      return;
+    }
+
+    const uniqueRows=[...new Map(actionable.map(row=>[row.item.id,row] as const)).values()];
     const supplierIds=uniqueRows.map(row=>{
       const relation=itemSuppliers.find(link=>link.inventory_item_id===row.item.id&&link.active&&link.preferred);
       return row.item.preferred_supplier_id||relation?.supplier_id||"";
@@ -379,26 +450,157 @@ export default function InventoryPage() {
     const supplierId=nonEmpty.length===1&&supplierIds.every(id=>id===nonEmpty[0])?nonEmpty[0]:"";
     const lines=uniqueRows.map(row=>{
       const preferredRelation=itemSuppliers.find(link=>link.inventory_item_id===row.item.id&&link.active&&(supplierId?link.supplier_id===supplierId:link.preferred));
+      const target=row.replenishmentTargetQuantity??suggestedOrderQuantity(row);
+      const covered=row.replenishmentCoveredQuantity??0;
       return {
         itemId:row.item.id,
-        quantity:String(suggestedOrderQuantity(row)),
+        quantity:String(Math.max(1,target-covered)),
         unitCost:String(preferredRelation?.last_unit_cost??row.item.unit_cost??0),
         supplierSku:preferredRelation?.supplier_sku??"",
       };
     });
-    const locationNames=[...new Set(rows.map(row=>row.location.name))].join(", ");
-    setPOForm({...emptyPurchaseOrderForm,supplierId,notes:`Stock replenishment for ${locationNames}.`,lines});
+    const location=actionable[0].location;
+    setPOForm({
+      ...emptyPurchaseOrderForm,
+      destinationLocationId:location.id,
+      supplierId,
+      notes:`Stock replenishment for ${location.name}.`,
+      lines,
+    });
     setPOError(null);
     setSummaryLocationId(null);
     setSummaryView(null);
     setPOOpen(true);
   }
-  async function savePO(){const shipping=numberOrNaN(poForm.shippingAmount);const tax=numberOrNaN(poForm.taxAmount);if(!poForm.supplierId){setPOError("Choose a supplier.");return;}if(typeof shipping!=="number"||typeof tax!=="number"||Number.isNaN(shipping)||Number.isNaN(tax)||shipping<0||tax<0){setPOError("Shipping and tax must be valid non-negative numbers.");return;}const lines=poForm.lines.filter(l=>l.itemId).map(l=>({inventory_item_id:l.itemId,quantity:Number(l.quantity),unit_cost:l.unitCost,supplier_sku:l.supplierSku}));if(!lines.length||lines.some(l=>!Number.isFinite(l.quantity)||l.quantity<=0)){setPOError("Add at least one valid PO line with quantity greater than zero.");return;}setSavingPO(true);const {data,error:saveError}=await supabase.rpc("fieldops_create_purchase_order",{p_supplier_id:poForm.supplierId,p_expected_date:poForm.expectedDate||null,p_shipping_amount:shipping,p_tax_amount:tax,p_notes:poForm.notes||null,p_lines:lines});if(saveError){setPOError(saveError.message);showNotice("error",saveError.message);setSavingPO(false);return;}await loadInventory();const result=data as {purchase_order_id?:string}|null;if(result?.purchase_order_id)setSelectedPOId(result.purchase_order_id);setPOOpen(false);setSavingPO(false);showNotice("success","Purchase order created.");}
-  async function setPOStatus(status:"approved"|"ordered"|"closed"|"cancelled"){if(!selectedPO)return;setSavingPOStatus(true);const {error:saveError}=await supabase.rpc("fieldops_set_purchase_order_status",{p_purchase_order_id:selectedPO.id,p_status:status});if(saveError){showNotice("error",saveError.message);setSavingPOStatus(false);return;}await loadInventory();setSavingPOStatus(false);showNotice("success",`Purchase order marked ${status.replace(/_/g," ")}.`);}
 
-  function openReceiving(){setReceivingForm({...emptyReceivingForm,locationId:locations.find(l=>l.active)?.id??"",receivedAt:localDateTimeInputNow()});setReceivingError(null);setReceivingOpen(true);}
-  function selectReceivingPO(id:string){const lines=poItems.filter(l=>l.purchase_order_id===id&&l.quantity_received<l.quantity_ordered).map(l=>({purchaseOrderItemId:l.id,inventoryItemId:l.inventory_item_id,quantityReceived:String(l.quantity_ordered-l.quantity_received),quantityDamaged:"0",unitCost:String(l.unit_cost)}));setReceivingForm(current=>({...current,purchaseOrderId:id,lines}));}
-  async function saveReceipt(){if(!receivingForm.purchaseOrderId||!receivingForm.locationId){setReceivingError("Choose a purchase order and receiving location.");return;}const lines=receivingForm.lines.map(l=>({purchase_order_item_id:l.purchaseOrderItemId,inventory_item_id:l.inventoryItemId,quantity_received:Number(l.quantityReceived),quantity_damaged:Number(l.quantityDamaged),unit_cost:l.unitCost})).filter(l=>Number.isFinite(l.quantity_received)&&l.quantity_received>0);if(!lines.length){setReceivingError("Enter at least one quantity to receive.");return;}if(lines.some(l=>!Number.isFinite(l.quantity_damaged)||l.quantity_damaged<0||l.quantity_damaged>l.quantity_received)){setReceivingError("Damaged quantities must be between zero and the received quantity.");return;}setSavingReceipt(true);const receivedAt=receivingForm.receivedAt?new Date(receivingForm.receivedAt).toISOString():null;const {error:saveError}=await supabase.rpc("fieldops_receive_purchase_order",{p_purchase_order_id:receivingForm.purchaseOrderId,p_location_id:receivingForm.locationId,p_received_at:receivedAt,p_packing_slip:receivingForm.packingSlip||null,p_notes:receivingForm.notes||null,p_lines:lines});if(saveError){setReceivingError(saveError.message);showNotice("error",saveError.message);setSavingReceipt(false);return;}await loadInventory();setReceivingOpen(false);setSavingReceipt(false);showNotice("success","Purchase order receipt posted and stock updated.");}
+  async function savePO(){
+    const shipping=numberOrNaN(poForm.shippingAmount);
+    const tax=numberOrNaN(poForm.taxAmount);
+    if(!poForm.destinationLocationId){setPOError("Choose the stock location this purchase order will replenish.");return;}
+    if(!poForm.supplierId){setPOError("Choose a supplier.");return;}
+    if(typeof shipping!=="number"||typeof tax!=="number"||Number.isNaN(shipping)||Number.isNaN(tax)||shipping<0||tax<0){setPOError("Shipping and tax must be valid non-negative numbers.");return;}
+    const lines=poForm.lines.filter(l=>l.itemId).map(l=>({inventory_item_id:l.itemId,quantity:Number(l.quantity),unit_cost:l.unitCost,supplier_sku:l.supplierSku}));
+    if(!lines.length||lines.some(l=>!Number.isFinite(l.quantity)||l.quantity<=0)){setPOError("Add at least one valid PO line with quantity greater than zero.");return;}
+
+    setSavingPO(true);
+    const {data,error:saveError}=await supabase.rpc("fieldops_create_replenishment_purchase_order",{
+      p_destination_location_id:poForm.destinationLocationId,
+      p_supplier_id:poForm.supplierId,
+      p_expected_date:poForm.expectedDate||null,
+      p_shipping_amount:shipping,
+      p_tax_amount:tax,
+      p_notes:poForm.notes||null,
+      p_lines:lines,
+    });
+    if(saveError){
+      setPOError(saveError.message);
+      showNotice("error",saveError.message);
+      setSavingPO(false);
+      return;
+    }
+
+    await loadInventory();
+    const result=data as {purchase_order_id?:string}|null;
+    if(result?.purchase_order_id)setSelectedPOId(result.purchase_order_id);
+    setPOOpen(false);
+    setSavingPO(false);
+    showNotice("success","Purchase order created and linked to its replenishment location.");
+  }
+
+  async function setPOStatus(status:"approved"|"ordered"|"closed"|"cancelled"){
+    if(!selectedPO)return;
+    setSavingPOStatus(true);
+    const {error:saveError}=await supabase.rpc("fieldops_set_purchase_order_status",{p_purchase_order_id:selectedPO.id,p_status:status});
+    if(saveError){showNotice("error",saveError.message);setSavingPOStatus(false);return;}
+    await loadInventory();
+    setSavingPOStatus(false);
+    showNotice("success",`Purchase order marked ${status.replace(/_/g," ")}.`);
+  }
+
+  function openReceiving(){
+    setReceivingForm({...emptyReceivingForm,locationId:"",receivedAt:localDateTimeInputNow()});
+    setReceivingError(null);
+    setReceivingOpen(true);
+  }
+
+  function selectReceivingPO(id:string){
+    if(!id){
+      setReceivingForm(current=>({...current,purchaseOrderId:"",lines:[]}));
+      return;
+    }
+
+    const lines=poItems
+      .filter(l=>l.purchase_order_id===id&&l.quantity_received<l.quantity_ordered)
+      .map(l=>({
+        purchaseOrderItemId:l.id,
+        inventoryItemId:l.inventory_item_id,
+        quantityReceived:String(l.quantity_ordered-l.quantity_received),
+        quantityDamaged:"0",
+        unitCost:String(l.unit_cost),
+      }));
+
+    setReceivingForm(current=>({...current,purchaseOrderId:id,lines}));
+  }
+
+  async function saveReceipt(){
+    if(!receivingForm.purchaseOrderId||!receivingForm.locationId){
+      setReceivingError("Choose a receiving location and purchase order.");
+      return;
+    }
+
+    const selectedReceivingPO=purchaseOrders.find(po=>po.id===receivingForm.purchaseOrderId);
+    if(selectedReceivingPO?.destination_location_id&&selectedReceivingPO.destination_location_id!==receivingForm.locationId){
+      setReceivingError("This purchase order belongs to a different replenishment location.");
+      return;
+    }
+
+    const lines=receivingForm.lines
+      .map(l=>({
+        purchase_order_item_id:l.purchaseOrderItemId,
+        inventory_item_id:l.inventoryItemId,
+        quantity_received:Number(l.quantityReceived),
+        quantity_damaged:Number(l.quantityDamaged),
+        unit_cost:l.unitCost,
+      }))
+      .filter(l=>Number.isFinite(l.quantity_received)&&l.quantity_received>0);
+
+    if(!lines.length){setReceivingError("Enter at least one quantity to receive.");return;}
+    if(lines.some(l=>!Number.isFinite(l.quantity_damaged)||l.quantity_damaged<0||l.quantity_damaged>l.quantity_received)){
+      setReceivingError("Damaged quantities must be between zero and the received quantity.");
+      return;
+    }
+
+    const exceedsRemaining=lines.some(line=>{
+      const poi=poItems.find(item=>item.id===line.purchase_order_item_id);
+      return !poi||line.quantity_received>Number(poi.quantity_ordered)-Number(poi.quantity_received);
+    });
+    if(exceedsRemaining){
+      setReceivingError("A received quantity is greater than the remaining PO quantity.");
+      return;
+    }
+
+    setSavingReceipt(true);
+    const receivedAt=receivingForm.receivedAt?new Date(receivingForm.receivedAt).toISOString():null;
+    const {error:saveError}=await supabase.rpc("fieldops_receive_purchase_order",{
+      p_purchase_order_id:receivingForm.purchaseOrderId,
+      p_location_id:receivingForm.locationId,
+      p_received_at:receivedAt,
+      p_packing_slip:receivingForm.packingSlip||null,
+      p_notes:receivingForm.notes||null,
+      p_lines:lines,
+    });
+    if(saveError){
+      setReceivingError(saveError.message);
+      showNotice("error",saveError.message);
+      setSavingReceipt(false);
+      return;
+    }
+
+    await loadInventory();
+    setReceivingOpen(false);
+    setSavingReceipt(false);
+    showNotice("success","Receipt posted. Only the quantity actually received was added to stock and received-cost reporting.");
+  }
 
   function openReturn(){setReturnForm({...emptyReturnForm,returnType:canManage?"supplier":"work_order",locationId:locations.find(l=>l.active)?.id??""});setReturnError(null);setReturnOpen(true);}
   async function saveReturn(){if(!returnForm.locationId||!returnForm.reason.trim()){setReturnError("Choose a location and enter the return reason.");return;}if(returnForm.returnType==="supplier"&&!returnForm.supplierId){setReturnError("Choose the supplier for this return.");return;}if(returnForm.returnType==="work_order"&&!returnForm.workOrderId){setReturnError("Choose the work order returning stock.");return;}if(returnForm.returnType==="technician"&&!returnForm.technicianId){setReturnError("Choose the technician returning stock.");return;}if(returnForm.returnType==="customer"&&!returnForm.customerId){setReturnError("Choose the customer returning stock.");return;}const lines=returnForm.lines.filter(l=>l.itemId).map(l=>({inventory_item_id:l.itemId,quantity:Number(l.quantity),condition:l.condition,unit_cost:l.unitCost}));if(!lines.length||lines.some(l=>!Number.isFinite(l.quantity)||l.quantity<=0)){setReturnError("Add at least one valid return item.");return;}setSavingReturn(true);const {error:saveError}=await supabase.rpc("fieldops_post_inventory_return",{p_return_type:returnForm.returnType,p_supplier_id:returnForm.supplierId||null,p_purchase_order_id:returnForm.purchaseOrderId||null,p_work_order_id:returnForm.workOrderId||null,p_technician_id:returnForm.technicianId||null,p_customer_id:returnForm.customerId||null,p_location_id:returnForm.locationId,p_reason:returnForm.reason,p_notes:returnForm.notes||null,p_lines:lines});if(saveError){setReturnError(saveError.message);showNotice("error",saveError.message);setSavingReturn(false);return;}await loadInventory();setReturnOpen(false);setSavingReturn(false);showNotice("success","Inventory return posted.");}
@@ -434,8 +636,8 @@ export default function InventoryPage() {
   {movementOpen&&<StockMovementModal form={movementForm} items={items} locations={locations} profiles={profiles} workOrders={workOrders} canManage={canManage} error={movementError} saving={savingMovement} onChange={setMovementForm} onSave={()=>void saveMovement()} onClose={()=>setMovementOpen(false)}/>} 
   {supplierOpen&&<SupplierFormModal mode={supplierMode} form={supplierForm} error={supplierError} saving={savingSupplier} onChange={setSupplierForm} onSave={()=>void saveSupplier()} onClose={()=>setSupplierOpen(false)}/>} 
   {locationOpen&&<LocationFormModal form={locationForm} sites={sites} profiles={profiles} error={locationError} saving={savingLocation} onChange={setLocationForm} onSave={()=>void saveLocation()} onClose={()=>setLocationOpen(false)}/>} 
-  {poOpen&&<PurchaseOrderModal form={poForm} suppliers={suppliers} items={items} error={poError} saving={savingPO} onChange={setPOForm} onSave={()=>void savePO()} onClose={()=>setPOOpen(false)}/>} 
-  {selectedPO&&<PurchaseOrderDetailModal po={selectedPO} lines={poItems.filter(l=>l.purchase_order_id===selectedPO.id)} supplier={supplierMap.get(selectedPO.supplier_id)??null} itemMap={itemMap} canManage={canManage} saving={savingPOStatus} onStatus={s=>void setPOStatus(s)} onClose={()=>setSelectedPOId(null)}/>} 
+  {poOpen&&<PurchaseOrderModal form={poForm} suppliers={suppliers} items={items} locations={locations} error={poError} saving={savingPO} onChange={setPOForm} onSave={()=>void savePO()} onClose={()=>setPOOpen(false)}/>} 
+  {selectedPO&&<PurchaseOrderDetailModal po={selectedPO} lines={poItems.filter(l=>l.purchase_order_id===selectedPO.id)} supplier={supplierMap.get(selectedPO.supplier_id)??null} location={selectedPO.destination_location_id?locationMap.get(selectedPO.destination_location_id)??null:null} itemMap={itemMap} canManage={canManage} saving={savingPOStatus} onStatus={s=>void setPOStatus(s)} onClose={()=>setSelectedPOId(null)}/>} 
   {receivingOpen&&<ReceivePOModal form={receivingForm} purchaseOrders={purchaseOrders} poItems={poItems} items={items} locations={locations} error={receivingError} saving={savingReceipt} onChange={setReceivingForm} onSelectPO={selectReceivingPO} onSave={()=>void saveReceipt()} onClose={()=>setReceivingOpen(false)}/>} 
   {returnOpen&&<ReturnModal form={returnForm} items={items} locations={locations} suppliers={suppliers} purchaseOrders={purchaseOrders} workOrders={workOrders} profiles={profiles} customers={customers} canManage={canManage} error={returnError} saving={savingReturn} onChange={setReturnForm} onSave={()=>void saveReturn()} onClose={()=>setReturnOpen(false)}/>} 
   {reconciliationStartOpen&&<ReconciliationStartModal locationId={reconciliationLocationId} notes={reconciliationNotes} locations={locations} error={reconciliationError} saving={savingReconciliation} onLocationChange={setReconciliationLocationId} onNotesChange={setReconciliationNotes} onSave={()=>void startReconciliation()} onClose={()=>setReconciliationStartOpen(false)}/>} 

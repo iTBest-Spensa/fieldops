@@ -955,7 +955,15 @@ export default function Home() {
 
       <div className="flex h-screen min-h-0 flex-col xl:ml-64">
         <header className="sticky top-0 z-30 flex h-[72px] shrink-0 items-center border-b border-border bg-topbar px-4 backdrop-blur-xl lg:px-6">
-          <div className="flex-1" />
+          <div className="hidden max-w-xl flex-1 md:block">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                className="h-10 w-full rounded-xl border border-border bg-input-background pl-9 pr-4 text-sm outline-none placeholder:text-muted-foreground focus:border-primary/50 focus:ring-2 focus:ring-primary/10"
+                placeholder="Search work orders, customers, technicians..."
+              />
+            </div>
+          </div>
 
           <div className="ml-auto flex items-center gap-2">
             <FieldOpsThemeToggle />

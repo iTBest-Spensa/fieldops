@@ -192,7 +192,7 @@ export function buildLiveBoard(args: {
       });
 
       const status = deriveTechnicianStatus(selectedDate, dayTrack);
-      const dispatchFitByJob = Object.fromEntries(
+      const confidenceByJob = Object.fromEntries(
         allJobs.map((job) => [
           job.uuid,
           computeDispatchFit({
@@ -204,12 +204,6 @@ export function buildLiveBoard(args: {
         ])
       );
 
-      const confidenceByJob = Object.fromEntries(
-        Object.entries(dispatchFitByJob).map(([jobUuid, fit]) => [
-          jobUuid,
-          fit.score,
-        ])
-      );
       return {
         uuid: profile.id,
         initials: initials(name),
@@ -218,7 +212,6 @@ export function buildLiveBoard(args: {
         status,
         statusTone: statusTone[status] ?? statusTone.AVAILABLE,
         confidenceByJob,
-        dispatchFitByJob,
         confidence: 0,
         rank: 0,
         track: dayTrack,
@@ -980,76 +973,32 @@ function computeDispatchFit(args: {
     : dateAtHour(selectedDate, 8);
 
   const startHour = dateToDecimalHour(proposedStart);
-  const endHour =
-    startHour + Math.max(job.estimatedDurationMinutes, 15) / 60;
+  const endHour = startHour + Math.max(job.estimatedDurationMinutes, 15) / 60;
 
-  const conflictingSegments = track
-    .filter(
-      (segment) =>
-        segment.status !== "available" &&
-        rangesOverlap(
-          startHour,
-          endHour,
-          segment.start,
-          segment.end
-        )
-    )
-    .sort((a, b) => a.start - b.start);
+  const conflict = track.some(
+    (segment) =>
+      segment.status !== "available" &&
+      rangesOverlap(startHour, endHour, segment.start, segment.end)
+  );
 
-  const conflict = conflictingSegments.length > 0;
-
-  // Schedule / availability = maximum 40 points.
   const availabilityScore = conflict ? 8 : 40;
 
-  // Skills = maximum 35 points.
   const required = normalizeTags(job.requiredSkills);
   const skills = normalizeTags(techProfile?.skill_tags ?? []);
-  const matchedSkills = required.filter((requiredSkill) =>
-    skills.includes(requiredSkill)
-  ).length;
-
-  const skillRatio =
-    required.length === 0
-      ? null
-      : matchedSkills / required.length;
-
   const skillScore =
     required.length === 0
       ? 24
-      : Math.round(35 * (skillRatio ?? 0));
+      : Math.round(
+          35 *
+            (required.filter((requiredSkill) => skills.includes(requiredSkill)).length /
+              required.length)
+        );
 
-  const skillsMatch =
-    required.length === 0
-      ? "Not specified"
-      : (skillRatio ?? 0) >= 0.75
-      ? "Strong"
-      : (skillRatio ?? 0) >= 0.5
-      ? "Partial"
-      : (skillRatio ?? 0) > 0
-      ? "Weak"
-      : "No match";
-
-  // Service area = maximum 15 points.
   const jobArea = normalizeText(job.serviceArea);
   const techArea = normalizeText(techProfile?.service_area);
-
   const areaScore =
-    !jobArea || !techArea
-      ? 10
-      : jobArea === techArea
-      ? 15
-      : 5;
+    !jobArea || !techArea ? 10 : jobArea === techArea ? 15 : 5;
 
-  const serviceArea =
-    !jobArea || !techArea
-      ? "Not specified"
-      : jobArea === techArea
-      ? "Match"
-      : "Different area";
-
-  // Workload = maximum 10 points.
-  // Actual-time lines can coexist with the planned line, so use only
-  // planned/scheduled segments here to avoid counting work twice.
   const scheduledHours = track
     .filter(
       (segment) =>
@@ -1062,54 +1011,11 @@ function computeDispatchFit(args: {
       0
     );
 
-  const workloadScore = Math.max(
-    0,
-    Math.round(
-      10 * (1 - Math.min(scheduledHours / 8, 1))
-    )
-  );
+  const workloadScore = Math.max(0, Math.round(10 * (1 - Math.min(scheduledHours / 8, 1))));
 
-  const workload =
-    scheduledHours <= 2
-      ? "Low"
-      : scheduledHours <= 5
-      ? "Moderate"
-      : scheduledHours < 8
-      ? "High"
-      : "Full";
-
-  const uniqueConflicts = Array.from(
-    new Set(
-      conflictingSegments.map(
-        (segment) =>
-          `${formatClock(segment.start)}â€“${formatClock(segment.end)}`
-      )
-    )
-  );
-
-  const timeConflict =
-    uniqueConflicts.length === 0
-      ? "None"
-      : uniqueConflicts.slice(0, 2).join(", ");
-
-  const score = clamp(
-    availabilityScore +
-      skillScore +
-      areaScore +
-      workloadScore,
-    0,
-    100
-  );
-
-  return {
-    score,
-    skillsMatch,
-    scheduleFit: conflict ? "Conflict" : "Available",
-    serviceArea,
-    workload,
-    timeConflict,
-  };
+  return clamp(availabilityScore + skillScore + areaScore + workloadScore, 0, 100);
 }
+
 function mapTimeEntryActivity(activityType: string): ActivityStatus {
   switch (activityType) {
     case "travel":

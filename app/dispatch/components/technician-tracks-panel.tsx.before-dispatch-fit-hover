@@ -1,0 +1,569 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Search,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
+
+import type { DragJobPayload, Technician, WaitingJob } from "../types";
+import {
+  BOARD_START_HOUR,
+  BOARD_TOTAL_HOURS,
+  boardHours,
+  statusColors,
+} from "../constants";
+import { formatHourHeader } from "../utils";
+import { SingleLineTimeline } from "./single-line-timeline";
+
+type TrackDensity = "compact" | "detailed";
+type GroupMode = "status" | "team" | "none";
+
+const STATUS_PRIORITY: Record<string, number> = {
+  WAITING: 0,
+  TRAVELLING: 1,
+  "ON SITE": 2,
+  WORKING: 3,
+  ASSIGNED: 4,
+  AVAILABLE: 5,
+  COMPLETE: 6,
+};
+
+function normalizeStatus(status: string) {
+  return status.trim().toUpperCase();
+}
+
+function groupLabel(mode: GroupMode, technician: Technician) {
+  if (mode === "status") return normalizeStatus(technician.status);
+  if (mode === "team") return technician.role?.trim() || "Technician";
+  return "All technicians";
+}
+
+function sortTechnicians(a: Technician, b: Technician) {
+  const aStatus = normalizeStatus(a.status);
+  const bStatus = normalizeStatus(b.status);
+  const statusDifference =
+    (STATUS_PRIORITY[aStatus] ?? 50) - (STATUS_PRIORITY[bStatus] ?? 50);
+
+  if (statusDifference !== 0) return statusDifference;
+  return a.name.localeCompare(b.name);
+}
+
+export function TechnicianTracksPanel({
+  selectedJob,
+  loading,
+  technicians,
+  boardShowsNow,
+  boardNowRatio,
+  boardNowLabel,
+  focusJobUuid,
+  focusPulse,
+  boardUsesLiveNow,
+  boardNowHour,
+  onDropJob,
+  onViewSchedule,
+  onOpenOvertime,
+}: {
+  selectedJob: WaitingJob | null;
+  loading: boolean;
+  technicians: Technician[];
+  boardShowsNow: boolean;
+  boardNowRatio: number;
+  boardNowLabel: string;
+  focusJobUuid: string | null;
+  focusPulse: boolean;
+  boardUsesLiveNow: boolean;
+  boardNowHour: number | null;
+  onDropJob: (
+    payload: DragJobPayload,
+    techUuid: string,
+    dropHour: number
+  ) => void;
+  onViewSchedule: (technicianUuid: string) => void;
+  onOpenOvertime: (technicianUuid: string) => void;
+}) {
+  const [density, setDensity] = useState<TrackDensity>("compact");
+  const [groupMode, setGroupMode] = useState<GroupMode>("status");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [teamFilter, setTeamFilter] = useState("all");
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
+    () => new Set()
+  );
+
+  const statusOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          technicians
+            .map((tech) => normalizeStatus(tech.status))
+            .filter(Boolean)
+        )
+      ).sort(
+        (a, b) =>
+          (STATUS_PRIORITY[a] ?? 50) - (STATUS_PRIORITY[b] ?? 50) ||
+          a.localeCompare(b)
+      ),
+    [technicians]
+  );
+
+  const teamOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          technicians
+            .map((tech) => tech.role?.trim() || "Technician")
+            .filter(Boolean)
+        )
+      ).sort((a, b) => a.localeCompare(b)),
+    [technicians]
+  );
+
+  const filteredTechnicians = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    return technicians
+      .filter((tech) => {
+        const status = normalizeStatus(tech.status);
+        const team = tech.role?.trim() || "Technician";
+
+        if (statusFilter !== "all" && status !== statusFilter) return false;
+        if (teamFilter !== "all" && team !== teamFilter) return false;
+
+        if (!query) return true;
+
+        return [tech.name, tech.role, tech.status]
+          .filter(Boolean)
+          .some((value) => value.toLowerCase().includes(query));
+      })
+      .sort(sortTechnicians);
+  }, [search, statusFilter, teamFilter, technicians]);
+
+  const groupedTechnicians = useMemo(() => {
+    if (groupMode === "none") {
+      return [
+        {
+          key: "all",
+          label: "All technicians",
+          technicians: filteredTechnicians,
+        },
+      ];
+    }
+
+    const map = new Map<string, Technician[]>();
+
+    for (const technician of filteredTechnicians) {
+      const key = groupLabel(groupMode, technician);
+      const existing = map.get(key) ?? [];
+      existing.push(technician);
+      map.set(key, existing);
+    }
+
+    const groups = Array.from(map.entries()).map(([key, items]) => ({
+      key,
+      label: key,
+      technicians: items.sort(sortTechnicians),
+    }));
+
+    if (groupMode === "status") {
+      groups.sort(
+        (a, b) =>
+          (STATUS_PRIORITY[a.key] ?? 50) - (STATUS_PRIORITY[b.key] ?? 50) ||
+          a.label.localeCompare(b.label)
+      );
+    } else {
+      groups.sort((a, b) => a.label.localeCompare(b.label));
+    }
+
+    return groups;
+  }, [filteredTechnicians, groupMode]);
+
+  const technicianColumnWidth = density === "compact" ? 218 : 250;
+  const minBoardWidth = density === "compact" ? 1060 : 1120;
+  const hasFilters =
+    search.trim().length > 0 ||
+    statusFilter !== "all" ||
+    teamFilter !== "all";
+
+  function toggleGroup(key: string) {
+    setCollapsedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function clearFilters() {
+    setSearch("");
+    setStatusFilter("all");
+    setTeamFilter("all");
+  }
+
+  return (
+    <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card/75 shadow-sm">
+      <div className="shrink-0 border-b border-border px-4 py-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="font-bold">Technician tracks</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Technician | Daily Track · {filteredTechnicians.length} of{" "}
+              {technicians.length} shown
+            </p>
+          </div>
+
+          {selectedJob && (
+            <div className="border border-primary/30 bg-primary/[0.06] px-3 py-2">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                Dispatch fit for
+              </div>
+              <div className="mt-0.5 max-w-[280px] truncate text-xs font-black text-primary">
+                {selectedJob.id} · {selectedJob.title}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <label className="relative min-w-[220px] flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search technician, team or status"
+              className="h-9 w-full border border-border bg-background pl-8 pr-3 text-xs outline-none transition focus:border-primary"
+            />
+          </label>
+
+          <select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+            className="h-9 min-w-[130px] border border-border bg-background px-2 text-xs font-semibold outline-none"
+            aria-label="Filter technicians by status"
+          >
+            <option value="all">All statuses</option>
+            {statusOptions.map((status) => (
+              <option key={status} value={status}>
+                {status}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={teamFilter}
+            onChange={(event) => setTeamFilter(event.target.value)}
+            className="h-9 min-w-[150px] border border-border bg-background px-2 text-xs font-semibold outline-none"
+            aria-label="Filter technicians by team"
+          >
+            <option value="all">All teams</option>
+            {teamOptions.map((team) => (
+              <option key={team} value={team}>
+                {team}
+              </option>
+            ))}
+          </select>
+
+          <label className="flex h-9 items-center gap-2 border border-border bg-background px-2 text-xs font-semibold">
+            <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+            <select
+              value={groupMode}
+              onChange={(event) =>
+                setGroupMode(event.target.value as GroupMode)
+              }
+              className="bg-transparent outline-none"
+              aria-label="Group technicians"
+            >
+              <option value="status">Group: Status</option>
+              <option value="team">Group: Team</option>
+              <option value="none">Group: None</option>
+            </select>
+          </label>
+
+          <div className="flex h-9 overflow-hidden border border-border bg-background">
+            <button
+              type="button"
+              onClick={() => setDensity("compact")}
+              className={`px-3 text-[10px] font-black uppercase tracking-wide ${
+                density === "compact"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Compact
+            </button>
+            <button
+              type="button"
+              onClick={() => setDensity("detailed")}
+              className={`border-l border-border px-3 text-[10px] font-black uppercase tracking-wide ${
+                density === "detailed"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Detailed
+            </button>
+          </div>
+
+          {hasFilters && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="inline-flex h-9 items-center gap-1 border border-border px-2 text-[10px] font-bold text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+              Clear
+            </button>
+          )}
+        </div>
+
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-bold text-muted-foreground">
+          <span className="uppercase tracking-wider">Track colors</span>
+          <span className="inline-flex items-center gap-1">
+            <span className={`h-1.5 w-4 ${statusColors.complete.line}`} />
+            Complete
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className={`h-1.5 w-4 ${statusColors.travelling.line}`} />
+            Travelling / On Site
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className={`h-1.5 w-4 ${statusColors.working.line}`} />
+            Working
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className={`h-1.5 w-4 ${statusColors.assigned.line}`} />
+            Assigned
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className={`h-1.5 w-4 ${statusColors.available.line}`} />
+            Available / Break
+          </span>
+        </div>
+      </div>
+
+      <div
+        className="max-h-[calc(100vh-270px)] min-h-[360px] overflow-auto"
+        data-dispatch-horizontal-scroll
+      >
+        <div style={{ minWidth: minBoardWidth }}>
+          <div
+            className="sticky top-0 z-[90] grid h-9 border-b border-border bg-muted/95 text-[10px] font-bold uppercase tracking-wider text-muted-foreground backdrop-blur"
+            style={{
+              gridTemplateColumns: `${technicianColumnWidth}px minmax(0,1fr)`,
+            }}
+          >
+            <div className="sticky left-0 z-[100] flex items-center border-r border-border bg-muted/95 px-3">
+              Technician
+            </div>
+            <div className="flex items-center px-3">Daily Track</div>
+          </div>
+
+          <div
+            className="sticky top-9 z-[85] grid h-9 border-b border-border bg-background/95 backdrop-blur"
+            style={{
+              gridTemplateColumns: `${technicianColumnWidth}px minmax(0,1fr)`,
+            }}
+          >
+            <div className="sticky left-0 z-[95] border-r border-border bg-background/95" />
+            <div className="relative">
+              {boardHours.map((hour, index) => {
+                const ratio =
+                  (hour - BOARD_START_HOUR) / BOARD_TOTAL_HOURS;
+                const alignClass =
+                  index === 0
+                    ? "translate-x-0"
+                    : index === boardHours.length - 1
+                    ? "-translate-x-full"
+                    : "-translate-x-1/2";
+
+                return (
+                  <div
+                    key={hour}
+                    className="absolute inset-y-0 border-l border-border/50"
+                    style={{ left: `${ratio * 100}%` }}
+                  >
+                    <span
+                      className={`absolute top-1.5 whitespace-nowrap text-[9px] font-semibold text-muted-foreground ${alignClass}`}
+                    >
+                      {formatHourHeader(hour)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="p-6 text-sm text-muted-foreground">
+              Loading technicians…
+            </div>
+          ) : filteredTechnicians.length === 0 ? (
+            <div className="p-6 text-sm text-muted-foreground">
+              No technicians match the current filters.
+            </div>
+          ) : (
+            <div className="relative">
+              {boardShowsNow && (
+                <div
+                  className="pointer-events-none absolute bottom-0 top-0 z-[70] w-px bg-rose-500"
+                  style={{
+                    left: `calc(${boardNowRatio * 100}% + ${
+                      technicianColumnWidth * (1 - boardNowRatio)
+                    }px)`,
+                  }}
+                >
+                  <div className="absolute -top-5 -translate-x-1/2 whitespace-nowrap bg-rose-500 px-1.5 py-0.5 text-[8px] font-black text-white">
+                    NOW · {boardNowLabel}
+                  </div>
+                </div>
+              )}
+
+              {groupedTechnicians.map((group) => {
+                const collapsed =
+                  groupMode !== "none" && collapsedGroups.has(group.key);
+
+                return (
+                  <div key={group.key}>
+                    {groupMode !== "none" && (
+                      <button
+                        type="button"
+                        onClick={() => toggleGroup(group.key)}
+                        className="grid w-full border-b border-border bg-muted/30 text-left hover:bg-muted/50"
+                        style={{
+                          gridTemplateColumns: `${technicianColumnWidth}px minmax(0,1fr)`,
+                        }}
+                      >
+                        <div className="sticky left-0 z-[60] flex h-8 items-center gap-2 border-r border-border bg-muted/95 px-3">
+                          {collapsed ? (
+                            <ChevronRight className="h-3.5 w-3.5" />
+                          ) : (
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          )}
+                          <span className="truncate text-[10px] font-black uppercase tracking-wider">
+                            {group.label}
+                          </span>
+                          <span className="ml-auto text-[9px] font-bold text-muted-foreground">
+                            {group.technicians.length}
+                          </span>
+                        </div>
+                        <div className="h-8" />
+                      </button>
+                    )}
+
+                    {!collapsed &&
+                      group.technicians.map((tech) => (
+                        <div
+                          key={tech.uuid}
+                          data-technician-row={tech.uuid}
+                          className="group grid border-b border-border last:border-b-0"
+                          style={{
+                            gridTemplateColumns: `${technicianColumnWidth}px minmax(0,1fr)`,
+                          }}
+                        >
+                          <div
+                            className={`sticky left-0 z-50 flex border-r border-border bg-card/95 backdrop-blur transition group-hover:bg-row-hover ${
+                              density === "compact"
+                                ? "items-center gap-2 px-2 py-1.5"
+                                : "items-start gap-3 p-3"
+                            }`}
+                          >
+                            <div
+                              className={`flex shrink-0 items-center justify-center bg-avatar font-black ${
+                                density === "compact"
+                                  ? "h-7 w-7 rounded-lg text-[9px]"
+                                  : "h-10 w-10 rounded-xl text-xs"
+                              }`}
+                            >
+                              {tech.initials}
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                              <div className="flex min-w-0 items-center gap-1.5">
+                                <div
+                                  className={`truncate font-bold ${
+                                    density === "compact"
+                                      ? "text-[11px]"
+                                      : "text-sm"
+                                  }`}
+                                >
+                                  {tech.name}
+                                </div>
+                                <span
+                                  className={`shrink-0 border px-1.5 py-0.5 text-[7px] font-black ${tech.statusTone}`}
+                                >
+                                  {tech.status}
+                                </span>
+                              </div>
+
+                              <div
+                                className={`truncate text-muted-foreground ${
+                                  density === "compact"
+                                    ? "mt-0.5 text-[9px]"
+                                    : "mt-0.5 text-[11px]"
+                                }`}
+                              >
+                                {tech.role}
+                              </div>
+
+                              <div
+                                className={`flex items-center gap-2 ${
+                                  density === "compact"
+                                    ? "mt-0.5"
+                                    : "mt-1.5"
+                                }`}
+                              >
+                                {selectedJob && (
+                                  <span
+                                    className={`text-[8px] font-black ${
+                                      tech.rank === 1
+                                        ? "text-primary"
+                                        : "text-muted-foreground"
+                                    }`}
+                                  >
+                                    {tech.confidence}% fit
+                                    {tech.rank === 1 ? " · BEST" : ""}
+                                  </span>
+                                )}
+
+                                <button
+                                  type="button"
+                                  onClick={() => onViewSchedule(tech.uuid)}
+                                  className="ml-auto inline-flex items-center gap-0.5 text-[9px] font-semibold text-primary hover:underline"
+                                >
+                                  Schedule
+                                  <ChevronRight className="h-3 w-3" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          <SingleLineTimeline
+                            density={density}
+                            track={tech.track}
+                            technicianId={tech.uuid}
+                            onDropJob={onDropJob}
+                            focusJobUuid={focusJobUuid}
+                            focusPulse={focusPulse}
+                            currentHour={
+                              boardUsesLiveNow ? boardNowHour : null
+                            }
+                            overtimeCount={tech.overtime.length}
+                            onOpenOvertime={() =>
+                              onOpenOvertime(tech.uuid)
+                            }
+                          />
+                        </div>
+                      ))}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}

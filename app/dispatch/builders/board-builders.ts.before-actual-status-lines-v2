@@ -192,7 +192,7 @@ export function buildLiveBoard(args: {
       });
 
       const status = deriveTechnicianStatus(selectedDate, dayTrack);
-      const dispatchFitByJob = Object.fromEntries(
+      const confidenceByJob = Object.fromEntries(
         allJobs.map((job) => [
           job.uuid,
           computeDispatchFit({
@@ -204,12 +204,6 @@ export function buildLiveBoard(args: {
         ])
       );
 
-      const confidenceByJob = Object.fromEntries(
-        Object.entries(dispatchFitByJob).map(([jobUuid, fit]) => [
-          jobUuid,
-          fit.score,
-        ])
-      );
       return {
         uuid: profile.id,
         initials: initials(name),
@@ -218,7 +212,6 @@ export function buildLiveBoard(args: {
         status,
         statusTone: statusTone[status] ?? statusTone.AVAILABLE,
         confidenceByJob,
-        dispatchFitByJob,
         confidence: 0,
         rank: 0,
         track: dayTrack,
@@ -568,114 +561,6 @@ function buildTrackForDate(args: {
   }
 
   // ----------------------------------------------------------------
-  // ACTUAL TIME ENTRIES = REAL STATUS SEGMENTS.
-  //
-  // The planned assignment remains visible, but real technician
-  // lifecycle segments are also drawn from time_entries so Travel,
-  // On Site, Working, Waiting and Break are not lost when a Work Order
-  // later becomes Finished / Billing Ready / Closed.
-  //
-  // If actual activity continues past the planned end, the normal
-  // status segment stops at planned end and the existing RED overrun
-  // segment owns the remainder.
-  // ----------------------------------------------------------------
-  for (const entry of timeEntries) {
-    const workOrder = workOrderMap.get(entry.work_order_id);
-    if (!workOrder) continue;
-
-    const rawStart = new Date(entry.started_at);
-    const rawEnd = entry.ended_at ? new Date(entry.ended_at) : new Date();
-
-    if (!datesOverlap(rawStart, rawEnd, window.start, window.end)) {
-      continue;
-    }
-
-    const matchingAssignment =
-      (entry.assignment_id
-        ? assignments.find((assignment) => assignment.id === entry.assignment_id)
-        : undefined) ??
-      assignments.find(
-        (assignment) => assignment.work_order_id === entry.work_order_id
-      );
-
-    const plannedEndIso =
-      matchingAssignment?.scheduled_end ?? workOrder.scheduled_end;
-    const plannedEnd = plannedEndIso ? new Date(plannedEndIso) : null;
-
-    // Time after planned end is already represented by the RED
-    // overrun line below. Do not draw a duplicate actual line there.
-    if (plannedEnd && rawStart >= plannedEnd) {
-      continue;
-    }
-
-    const normalEnd =
-      plannedEnd && rawEnd > plannedEnd ? plannedEnd : rawEnd;
-
-    if (normalEnd <= rawStart) {
-      continue;
-    }
-
-    const clippedStart =
-      rawStart < window.start ? window.start : rawStart;
-    const clippedEnd =
-      normalEnd > window.end ? window.end : normalEnd;
-
-    const customer = customerMap.get(workOrder.customer_id);
-    const site = workOrder.site_id
-      ? siteMap.get(workOrder.site_id)
-      : null;
-
-    const displayStartHour = dateToDecimalHour(clippedStart);
-    const displayEndHour =
-      clippedEnd.getTime() === window.end.getTime()
-        ? 24
-        : dateToDecimalHour(clippedEnd);
-
-    const clippedByPlannedEnd =
-      plannedEnd !== null && rawEnd > plannedEnd;
-    const isOpen =
-      entry.ended_at === null && !clippedByPlannedEnd;
-
-    track.push({
-      start: displayStartHour,
-      end: displayEndHour,
-      id: workOrder.work_order_number,
-      title: workOrder.title,
-      time: isOpen
-        ? `${formatLocalTime(rawStart)}â€“NOW`
-        : `${formatLocalTime(rawStart)}â€“${formatLocalTime(normalEnd)}`,
-      status: mapTimeEntryActivity(entry.activity_type),
-      labelSide: track.length % 2 === 0 ? "top" : "bottom",
-      customer: customer?.name,
-      place:
-        workOrder.service_area ??
-        site?.city ??
-        site?.name ??
-        undefined,
-      priority: capitalize(workOrder.priority),
-      description: workOrder.description ?? undefined,
-      workOrderUuid: workOrder.id,
-      assignmentId: entry.assignment_id ?? matchingAssignment?.id,
-      actual: true,
-      openActual: isOpen,
-      activityType: entry.activity_type,
-      billable: entry.billable,
-      plannedStart:
-        matchingAssignment?.scheduled_start || workOrder.scheduled_start
-          ? dateToDecimalHour(
-              new Date(
-                matchingAssignment?.scheduled_start ??
-                  workOrder.scheduled_start!
-              )
-            )
-          : undefined,
-      plannedEnd: plannedEnd
-        ? dateToDecimalHour(plannedEnd)
-        : undefined,
-      overrun: false,
-    });
-  }
-  // ----------------------------------------------------------------
   // OVERRUN = ACTUAL OWNERSHIP CONTINUING BEYOND PLANNED END.
   //
   // Planned line ends at planned end.
@@ -939,16 +824,7 @@ function deriveTechnicianStatus(selectedDate: string, track: Segment[]) {
   if (selectedDate !== today) return track.length > 0 ? "ASSIGNED" : "AVAILABLE";
 
   const now = dateToDecimalHour(new Date());
-  const activeSegments = track.filter(
-    (segment) => segment.start <= now && segment.end >= now
-  );
-
-  // Prefer real activity over the planned assignment when both occupy
-  // the same time. This keeps the technician status badge aligned with
-  // Travel / On Site / Working instead of the Work Order's final state.
-  const active =
-    activeSegments.find((segment) => segment.actual === true) ??
-    activeSegments[0];
+  const active = track.find((segment) => segment.start <= now && segment.end >= now);
 
   if (!active) return "AVAILABLE";
 
@@ -980,136 +856,41 @@ function computeDispatchFit(args: {
     : dateAtHour(selectedDate, 8);
 
   const startHour = dateToDecimalHour(proposedStart);
-  const endHour =
-    startHour + Math.max(job.estimatedDurationMinutes, 15) / 60;
+  const endHour = startHour + Math.max(job.estimatedDurationMinutes, 15) / 60;
 
-  const conflictingSegments = track
-    .filter(
-      (segment) =>
-        segment.status !== "available" &&
-        rangesOverlap(
-          startHour,
-          endHour,
-          segment.start,
-          segment.end
-        )
-    )
-    .sort((a, b) => a.start - b.start);
+  const conflict = track.some(
+    (segment) =>
+      segment.status !== "available" &&
+      rangesOverlap(startHour, endHour, segment.start, segment.end)
+  );
 
-  const conflict = conflictingSegments.length > 0;
-
-  // Schedule / availability = maximum 40 points.
   const availabilityScore = conflict ? 8 : 40;
 
-  // Skills = maximum 35 points.
   const required = normalizeTags(job.requiredSkills);
   const skills = normalizeTags(techProfile?.skill_tags ?? []);
-  const matchedSkills = required.filter((requiredSkill) =>
-    skills.includes(requiredSkill)
-  ).length;
-
-  const skillRatio =
-    required.length === 0
-      ? null
-      : matchedSkills / required.length;
-
   const skillScore =
     required.length === 0
       ? 24
-      : Math.round(35 * (skillRatio ?? 0));
+      : Math.round(
+          35 *
+            (required.filter((requiredSkill) => skills.includes(requiredSkill)).length /
+              required.length)
+        );
 
-  const skillsMatch =
-    required.length === 0
-      ? "Not specified"
-      : (skillRatio ?? 0) >= 0.75
-      ? "Strong"
-      : (skillRatio ?? 0) >= 0.5
-      ? "Partial"
-      : (skillRatio ?? 0) > 0
-      ? "Weak"
-      : "No match";
-
-  // Service area = maximum 15 points.
   const jobArea = normalizeText(job.serviceArea);
   const techArea = normalizeText(techProfile?.service_area);
-
   const areaScore =
-    !jobArea || !techArea
-      ? 10
-      : jobArea === techArea
-      ? 15
-      : 5;
+    !jobArea || !techArea ? 10 : jobArea === techArea ? 15 : 5;
 
-  const serviceArea =
-    !jobArea || !techArea
-      ? "Not specified"
-      : jobArea === techArea
-      ? "Match"
-      : "Different area";
-
-  // Workload = maximum 10 points.
-  // Actual-time lines can coexist with the planned line, so use only
-  // planned/scheduled segments here to avoid counting work twice.
   const scheduledHours = track
-    .filter(
-      (segment) =>
-        segment.actual !== true &&
-        !["available", "break"].includes(segment.status)
-    )
-    .reduce(
-      (total, segment) =>
-        total + Math.max(0, segment.end - segment.start),
-      0
-    );
+    .filter((segment) => !["available", "break"].includes(segment.status))
+    .reduce((total, segment) => total + Math.max(0, segment.end - segment.start), 0);
 
-  const workloadScore = Math.max(
-    0,
-    Math.round(
-      10 * (1 - Math.min(scheduledHours / 8, 1))
-    )
-  );
+  const workloadScore = Math.max(0, Math.round(10 * (1 - Math.min(scheduledHours / 8, 1))));
 
-  const workload =
-    scheduledHours <= 2
-      ? "Low"
-      : scheduledHours <= 5
-      ? "Moderate"
-      : scheduledHours < 8
-      ? "High"
-      : "Full";
-
-  const uniqueConflicts = Array.from(
-    new Set(
-      conflictingSegments.map(
-        (segment) =>
-          `${formatClock(segment.start)}â€“${formatClock(segment.end)}`
-      )
-    )
-  );
-
-  const timeConflict =
-    uniqueConflicts.length === 0
-      ? "None"
-      : uniqueConflicts.slice(0, 2).join(", ");
-
-  const score = clamp(
-    availabilityScore +
-      skillScore +
-      areaScore +
-      workloadScore,
-    0,
-    100
-  );
-
-  return {
-    score,
-    skillsMatch,
-    scheduleFit: conflict ? "Conflict" : "Available",
-    serviceArea,
-    workload,
-    timeConflict,
-  };
+  return clamp(availabilityScore + skillScore + areaScore + workloadScore, 0, 100);
 }
+
 function mapTimeEntryActivity(activityType: string): ActivityStatus {
   switch (activityType) {
     case "travel":
