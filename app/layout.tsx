@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import { FieldOpsAutoFlow } from "@/components/fieldops-auto-flow";
+import { FieldOpsAccountsNavigation } from "@/components/fieldops-accounts-navigation";
 import "./globals.css";
 
 const defaultUrl = process.env.VERCEL_URL
@@ -11,7 +12,7 @@ const defaultUrl = process.env.VERCEL_URL
 export const metadata: Metadata = {
   metadataBase: new URL(defaultUrl),
   title: "FieldOps",
-  description: "Dispatch, field operations, assets, inventory and billing.",
+  description: "Dispatch, field operations, assets, inventory and accounts.",
 };
 
 const geistSans = Geist({
@@ -34,6 +35,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <FieldOpsAutoFlow />
+          <FieldOpsAccountsNavigation />
           {children}
         </ThemeProvider>
       </body>
