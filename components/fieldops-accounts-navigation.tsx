@@ -4,8 +4,7 @@ import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 
 function upgradeNavigation() {
-  document.querySelectorAll<HTMLAnchorElement>('a[href="/billing"]').forEach((anchor) => {
-    if (anchor.dataset.accountsWorkspaceLink === "true") return;
+  document.querySelectorAll<HTMLAnchorElement>('nav a[href="/billing"]').forEach((anchor) => {
     anchor.href = "/accounts";
     anchor.querySelectorAll<HTMLElement>("span").forEach((node) => {
       if (node.textContent?.trim() === "Billing") node.textContent = "Accounts";
@@ -17,9 +16,8 @@ function upgradeNavigation() {
     }
   });
 
-  document.querySelectorAll<HTMLAnchorElement>('a[href="/reports"]').forEach((anchor) => {
-    const nav = anchor.closest("nav");
-    if (nav) anchor.style.display = "none";
+  document.querySelectorAll<HTMLAnchorElement>('nav a[href="/reports"]').forEach((anchor) => {
+    anchor.style.display = "none";
   });
 }
 
