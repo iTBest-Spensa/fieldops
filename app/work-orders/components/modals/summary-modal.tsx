@@ -177,7 +177,7 @@ export function SummaryModal(props: Props) {
 
                     <div>
                       <span
-                        className={`inline-flex border px-2 py-1 text-[9px] font-black rounded-none ${statusTone(
+                        className={`inline-flex border px-2 py-1 text-[9px] font-black ${statusTone(
                           order.status
                         )}`}
                       >

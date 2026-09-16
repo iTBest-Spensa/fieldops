@@ -1,4 +1,5 @@
 "use client";
+import { FieldOpsSidebar } from "@/components/fieldops-sidebar";
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -142,6 +143,38 @@ function EmptyState({ title, text }: { title: string; text: string }) {
 export default function AccountsPage() {
   const supabase = useMemo(() => createClient(), []);
   const [section, setSection] = useState<Section>("billing");
+
+  useEffect(() => {
+    const setRequestedSection = (requested: string) => {
+      if (
+        requested === "billing" ||
+        requested === "payable" ||
+        requested === "receivable" ||
+        requested === "reports"
+      ) {
+        setSection(requested as Section);
+      }
+    };
+
+    const syncSectionFromHash = () => {
+      setRequestedSection(window.location.hash.replace("#", ""));
+    };
+
+    const syncSectionFromSidebar = (event: Event) => {
+      const requested = (event as CustomEvent<string>).detail;
+      setRequestedSection(requested);
+    };
+
+    syncSectionFromHash();
+
+    window.addEventListener("hashchange", syncSectionFromHash);
+    window.addEventListener("fieldops:accounts-section", syncSectionFromSidebar);
+
+    return () => {
+      window.removeEventListener("hashchange", syncSectionFromHash);
+      window.removeEventListener("fieldops:accounts-section", syncSectionFromSidebar);
+    };
+  }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
@@ -158,18 +191,31 @@ export default function AccountsPage() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const initialBillDate = today();
   const [billForm, setBillForm] = useState<BillForm>({
     supplierId: "",
     purchaseOrderId: "",
     billNumber: "",
-    billDate: initialBillDate,
-    dueDate: addDays(initialBillDate, 30),
+    billDate: "",
+    dueDate: "",
     subtotal: "",
     taxAmount: "",
     notes: "",
   });
   const [paymentForm, setPaymentForm] = useState<PaymentForm>({ billId: "", amount: "", method: "eft", reference: "", notes: "" });
+
+  useEffect(() => {
+    const currentDate = today();
+
+    setBillForm((current) => {
+      if (current.billDate) return current;
+
+      return {
+        ...current,
+        billDate: currentDate,
+        dueDate: addDays(currentDate, 30),
+      };
+    });
+  }, []);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -323,15 +369,7 @@ export default function AccountsPage() {
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="grid min-h-screen grid-cols-[236px_1fr]">
-        <aside className="border-r border-border bg-card">
-          <CompanyBrand className="border-b border-border px-5 py-4" nameClassName="text-lg font-black" compact />
-          <nav className="space-y-1 p-3">
-            {navigation.map((item) => {
-              const Icon = item.icon;
-              return <Link key={item.label} href={item.href} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium ${item.active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}><Icon className="h-4 w-4" />{item.label}</Link>;
-            })}
-          </nav>
-        </aside>
+        <FieldOpsSidebar />
 
         <section className="min-w-0">
           <header className="flex h-16 items-center justify-between border-b border-border bg-card px-6">
@@ -341,16 +379,12 @@ export default function AccountsPage() {
 
           <div className="p-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
-              <div><div className="text-sm font-bold text-primary">Finance & Accounting</div><h1 className="mt-1 text-3xl font-black">Accounts</h1><p className="mt-2 max-w-3xl text-sm text-muted-foreground">Billing, payables, receivables and financial reporting in one connected workspace.</p></div>
+              <div><div className="text-sm font-bold text-primary">Finance & Accounting</div></div>
               <button onClick={() => void loadData()} className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-bold hover:bg-muted"><RefreshCw className="h-4 w-4" />Refresh</button>
             </div>
 
             {notice ? <div className="mt-4 flex items-center justify-between rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm font-semibold"><span>{notice}</span><button onClick={() => setNotice(null)} className="rounded-full p-1 hover:bg-background/50"><X className="h-4 w-4" /></button></div> : null}
             {error ? <div className="mt-4 rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm font-semibold text-destructive">{error}</div> : null}
-
-            <div className="mt-6 grid gap-3 lg:grid-cols-4">
-              {sectionTabs.map((tab) => { const Icon = tab.icon; return <button key={tab.key} onClick={() => setSection(tab.key)} className={`rounded-2xl border p-4 text-left transition ${section === tab.key ? "border-primary bg-primary text-primary-foreground shadow-sm" : "border-border bg-card hover:bg-muted"}`}><div className="flex items-center gap-3"><div className={`rounded-xl p-2 ${section === tab.key ? "bg-primary-foreground/15" : "bg-muted"}`}><Icon className="h-5 w-5" /></div><div><div className="font-black">{tab.label}</div><div className={`mt-1 text-xs ${section === tab.key ? "text-primary-foreground/75" : "text-muted-foreground"}`}>{tab.description}</div></div></div></button>; })}
-            </div>
 
             {loading ? <div className="mt-6 rounded-2xl border border-border bg-card p-10 text-center text-sm text-muted-foreground">Loading Accounts...</div> : null}
 

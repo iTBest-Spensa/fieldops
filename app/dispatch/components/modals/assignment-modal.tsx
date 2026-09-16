@@ -141,7 +141,7 @@ export function DispatchAssignmentModal({
                         : "Enter a date, start and end time."}
                     </span>
                     <span className="font-semibold text-amber-600 dark:text-amber-400">
-                      Daily board: 7 AM–5 PM · overtime shown separately
+                      Daily board: 6 AM–10 PM
                     </span>
                   </div>
                 </div>

@@ -97,7 +97,7 @@ export function WaitingWorkPanel({
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-xs font-black text-primary">{job.id}</span>
                   <span
-                    className={`border px-2 py-1 text-[10px] font-bold rounded-none ${job.tone}`}
+                    className={`border px-2 py-1 text-[10px] font-bold ${job.tone}`}
                   >
                     {job.priority}
                   </span>

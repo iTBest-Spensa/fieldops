@@ -1,4 +1,5 @@
 "use client";
+import { FieldOpsSidebar } from "@/components/fieldops-sidebar";
 
 import {
   useCallback,
@@ -289,8 +290,7 @@ const navigation = [
   { label: "Field Team", icon: Users, href: "/field-team" },
   { label: "Assets", icon: Boxes, href: "/assets" },
   { label: "Inventory", icon: Package, href: "/inventory" },
-  { label: "Billing", icon: ReceiptText, href: "/billing" },
-  { label: "Reports", icon: BarChart3, href: "/reports" },
+  { label: "Accounts", icon: ReceiptText, href: "/accounts" },
   { label: "Settings", icon: Settings, href: "/settings" },
 ];
 
@@ -1245,7 +1245,7 @@ export default function DashboardPage() {
 
   return <main className="min-h-screen bg-background text-foreground">
     <div className="grid min-h-screen grid-cols-[236px_minmax(0,1fr)]">
-      <aside className="border-r border-border bg-card"><CompanyBrand className="border-b border-border px-5 py-4" nameClassName="text-lg font-black" compact /><nav className="space-y-1 p-3">{navigation.map((item) => { const Icon = item.icon; return <Link key={item.label} href={item.href} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium ${item.active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}><Icon className="h-4 w-4" />{item.label}</Link>; })}</nav></aside>
+      <FieldOpsSidebar />
       <section className="min-w-0">
         <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-border bg-card/95 px-6 backdrop-blur"><div><div className="text-xs font-black uppercase tracking-[0.18em] text-primary">Operations</div><div className="text-sm font-semibold">FieldOps Dashboard</div></div><div className="flex items-center gap-2"><div className="hidden text-right md:block"><div className="text-[10px] font-black uppercase text-muted-foreground">Last updated</div><div className="text-xs font-semibold">{lastUpdatedAt ? lastUpdatedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }) : "—"}</div></div><button type="button" onClick={() => void manualRefresh()} disabled={refreshing} className="flex h-10 items-center gap-2 rounded-xl border border-border bg-background px-3 text-xs font-bold hover:bg-muted disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />{refreshing ? "Refreshing..." : "Refresh"}</button><FieldOpsThemeToggle /><button type="button" className="flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-background"><Bell className="h-4 w-4" /></button></div></header>
         <div className="p-5 lg:p-6">

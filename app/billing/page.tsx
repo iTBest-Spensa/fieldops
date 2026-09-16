@@ -1,4 +1,5 @@
 "use client";
+import { FieldOpsSidebar } from "@/components/fieldops-sidebar";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -41,7 +42,6 @@ const navigation = [
   { label: "Assets", icon: Boxes, href: "/assets" },
   { label: "Inventory", icon: Package, href: "/inventory" },
   { label: "Billing", icon: ReceiptText, active: true, href: "/billing" },
-  { label: "Reports", icon: BarChart3, href: "/reports" },
   { label: "Settings", icon: Settings, href: "/settings" },
 ];
 
@@ -485,8 +485,8 @@ export default function BillingPage() {
 
   return <div className="min-h-screen bg-background text-foreground">
     <ActionNotice notice={actionNotice} onClose={() => setActionNotice(null)} />
-    <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 border-r border-border bg-card lg:block"><CompanyBrand className="border-b border-border px-5 py-4" subtitle="Dispatch & Billing" nameClassName="text-xl font-black tracking-tight" subtitleClassName="mt-1 text-[10px] font-black uppercase tracking-[0.22em] text-primary" compact /><nav className="space-y-1 p-3">{navigation.map((item) => { const Icon = item.icon; return <Link key={item.href} href={item.href} className={`flex items-center gap-3 px-3 py-2.5 text-sm font-bold ${item.active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}><Icon className="h-4 w-4" />{item.label}</Link>; })}</nav></aside>
-    <main className="lg:pl-64">
+    <FieldOpsSidebar fixed />
+    <main className="xl:pl-64">
       <header className="sticky top-0 z-30 flex items-center justify-between gap-4 border-b border-border bg-background/95 px-4 py-4 backdrop-blur md:px-6"><div><div className="text-[10px] font-black uppercase tracking-[0.18em] text-primary">Financial Operations</div><h1 className="text-2xl font-black">Billing</h1></div><div className="flex items-center gap-2"><button type="button" onClick={() => void loadData()} className="inline-flex h-10 items-center gap-2 border border-border px-3 text-xs font-black hover:bg-muted"><RefreshCw className="h-4 w-4" /> Refresh</button><FieldOpsThemeToggle /></div></header>
       <div className="space-y-6 p-4 md:p-6">
         <BillingSummaryCards billingReady={summary.ready} drafts={summary.drafts} outstanding={summary.outstanding} overdue={summary.overdue} onView={setSummaryView} />

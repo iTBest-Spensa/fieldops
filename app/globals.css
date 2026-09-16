@@ -96,6 +96,11 @@
     @apply border-border;
   }
 
+  /* FieldOps surface rule: bordered windows, cards, controls and notices never use 90-degree corners. */
+  [class~="border"] {
+    border-radius: var(--radius);
+  }
+
   html {
     background: hsl(var(--background));
   }

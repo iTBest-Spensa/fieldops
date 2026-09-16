@@ -1,4 +1,5 @@
 "use client";
+import { FieldOpsSidebar } from "@/components/fieldops-sidebar";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -33,7 +34,7 @@ import { CompanyBrand } from "@/components/company-brand";
 import { createClient } from "@/lib/supabase/client";
 
 import type { AssignTechnicianForm, DbAssignment, DbCustomer, DbEvent, DbInventoryItem, DbInventoryLocation, DbInventoryTransaction, DbMaterialUsage, DbNote, DbProfile, DbRateDefaults, DbRole, DbSite, DbTimeCorrection, DbTimeEntry, DbWorkOrder, EditWorkOrderForm, NewWorkOrderForm, ServerAvailability, SummaryView, TimeEditorForm, WorkOrderOverrun, WorkOrderStatus } from "./types";
-import { emptyNewWorkOrderForm, navigation, priorities, workOrderStatuses } from "./constants";
+import { emptyNewWorkOrderForm, priorities, workOrderStatuses } from "./constants";
 import { billingStatusLabel, combineLocalDateAndTime, dateInputFromIso, dateTimeLocalInputFromIso, formatCompactDateTime, formatDateInput, formatLocalDateTime, formatLocalDateTime24, formatTime24, intervalsOverlap, isTerminalWorkOrderStatus, localDateTime, minutesLabel, priorityTone, safeDurationMinutes, statusLabel, statusTone, timeInputFromIso, varianceLabel } from "./utils";
 import { SummaryCard } from "./components/summary-card";
 import { ActionNotice } from "./components/action-notice";
@@ -334,6 +335,12 @@ export default function WorkOrdersPage() {
         selectedOrderDisplayAssignment?.technician_id
           ? `&tech=${encodeURIComponent(
               selectedOrderDisplayAssignment.technician_id
+            )}`
+          : ""
+      }${
+        selectedOrderDisplayAssignment?.id
+          ? `&assignment=${encodeURIComponent(
+              selectedOrderDisplayAssignment.id
             )}`
           : ""
       }`
@@ -2448,32 +2455,7 @@ requested, planned, assigned, travelling, on_site, working, waiting, finished, b
           onDismiss={() => setActionNotice(null)}
         />
       )}
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-border bg-sidebar xl:flex">
-        <CompanyBrand className="h-[72px] border-b border-border px-4" />
-
-        <nav className="flex-1 space-y-1 p-3">
-          {navigation.map((item) => {
-            const Icon = item.icon;
-            const className = `flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
-              item.active
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-sidebar-hover hover:text-foreground"
-            }`;
-
-            return item.href ? (
-              <Link key={item.label} href={item.href} className={className}>
-                <Icon className="h-[18px] w-[18px]" />
-                {item.label}
-              </Link>
-            ) : (
-              <button key={item.label} type="button" className={className}>
-                <Icon className="h-[18px] w-[18px]" />
-                {item.label}
-              </button>
-            );
-          })}
-        </nav>
-      </aside>
+      <FieldOpsSidebar fixed />
 
       <div className="xl:ml-64">
         <header className="sticky top-0 z-30 flex h-[72px] items-center border-b border-border bg-topbar px-4 backdrop-blur-xl lg:px-6">
@@ -2715,7 +2697,7 @@ requested, planned, assigned, travelling, on_site, working, waiting, finished, b
 
                               <div className="py-3 pr-3">
                                 <span
-                                  className={`inline-flex border px-2 py-1 text-[9px] font-black rounded-none ${statusTone(
+                                  className={`inline-flex border px-2 py-1 text-[9px] font-black ${statusTone(
                                     order.status
                                   )}`}
                                 >
@@ -2725,7 +2707,7 @@ requested, planned, assigned, travelling, on_site, working, waiting, finished, b
 
                               <div className="py-3 pr-3">
                                 <span
-                                  className={`inline-flex border px-2 py-1 text-[9px] font-black rounded-none ${priorityTone(
+                                  className={`inline-flex border px-2 py-1 text-[9px] font-black ${priorityTone(
                                     order.priority
                                   )}`}
                                 >

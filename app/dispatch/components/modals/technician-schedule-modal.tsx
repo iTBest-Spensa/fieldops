@@ -46,7 +46,7 @@ export function TechnicianScheduleModal({
                         {selectedTech.status}
                       </span>
                       {selectedJob && (
-                        <span className="border border-primary/25 bg-primary/[0.06] px-2 py-1 text-[9px] font-black text-primary rounded-none">
+                        <span className="border border-primary/25 bg-primary/[0.06] px-2 py-1 text-[9px] font-black text-primary">
                           {selectedTech.confidence}% FIT FOR {selectedJob.id}
                         </span>
                       )}

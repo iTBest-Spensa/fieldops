@@ -1,4 +1,5 @@
 "use client";
+import { FieldOpsSidebar } from "@/components/fieldops-sidebar";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -35,8 +36,7 @@ const navigation = [
   { label: "Field Team", icon: Users, href: "/field-team" },
   { label: "Assets", icon: Boxes, href: "/assets" },
   { label: "Inventory", icon: Package, href: "/inventory" },
-  { label: "Billing", icon: ReceiptText, href: "/billing" },
-  { label: "Reports", icon: BarChart3, href: "/reports" },
+  { label: "Accounts", icon: ReceiptText, href: "/accounts" },
   { label: "Settings", icon: Settings, href: "/settings" },
 ];
 
@@ -464,15 +464,7 @@ export default function CustomersPage() {
     <main className="min-h-screen bg-background text-foreground">
       <ActionNotice notice={actionNotice} onClose={() => setActionNotice(null)} />
 
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-border bg-sidebar xl:flex">
-        <CompanyBrand className="h-[72px] border-b border-border px-4" />
-        <nav className="flex-1 space-y-1 p-3">
-          {navigation.map((item) => {
-            const Icon = item.icon;
-            return <Link key={item.label} href={item.href} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${item.active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-sidebar-hover hover:text-foreground"}`}><Icon className="h-[18px] w-[18px]" />{item.label}</Link>;
-          })}
-        </nav>
-      </aside>
+      <FieldOpsSidebar fixed />
 
       <div className="xl:ml-64">
         <header className="sticky top-0 z-30 flex h-[72px] items-center border-b border-border bg-topbar px-4 backdrop-blur-xl lg:px-6">

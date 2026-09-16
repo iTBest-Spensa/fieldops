@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronRight, Search, X } from "lucide-react";
 
-import type { DragJobPayload, Technician, WaitingJob } from "../types";
+import type { DragJobPayload, Segment, Technician, WaitingJob } from "../types";
 import {
   BOARD_START_HOUR,
   BOARD_TOTAL_HOURS,
@@ -117,7 +117,9 @@ export function TechnicianTracksPanel({
   boardNowRatio,
   boardNowLabel,
   focusJobUuid,
+  focusAssignmentId,
   focusPulse,
+  onEditActivity,
   boardUsesLiveNow,
   boardNowHour,
   onDropJob,
@@ -131,7 +133,9 @@ export function TechnicianTracksPanel({
   boardNowRatio: number;
   boardNowLabel: string;
   focusJobUuid: string | null;
+  focusAssignmentId: string | null;
   focusPulse: boolean;
+  onEditActivity: (segment: Segment, technicianId: string) => void;
   boardUsesLiveNow: boolean;
   boardNowHour: number | null;
   onDropJob: (
@@ -413,6 +417,25 @@ export function TechnicianTracksPanel({
           >
             <div className="sticky left-0 z-[95] border-r border-border bg-background/95" />
             <div className="relative">
+              {boardShowsNow && (
+                <div
+                  className="pointer-events-none absolute inset-y-0 z-[130] w-px bg-rose-500"
+                  style={{ left: `${boardNowRatio * 100}%` }}
+                >
+                  <span
+                    className={`absolute top-0 whitespace-nowrap rounded-sm bg-rose-500 px-1.5 py-0.5 text-[8px] font-black text-white ${
+                      boardNowRatio > 0.92
+                        ? "-translate-x-full"
+                        : boardNowRatio < 0.08
+                        ? "translate-x-0"
+                        : "-translate-x-1/2"
+                    }`}
+                  >
+                    NOW · {boardNowLabel}
+                  </span>
+                </div>
+              )}
+
               {boardHours.map((hour, index) => {
                 const ratio =
                   (hour - BOARD_START_HOUR) / BOARD_TOTAL_HOURS;
@@ -459,11 +482,7 @@ export function TechnicianTracksPanel({
                       technicianColumnWidth * (1 - boardNowRatio)
                     }px)`,
                   }}
-                >
-                  <div className="absolute -top-5 -translate-x-1/2 whitespace-nowrap bg-rose-500 px-1.5 py-0.5 text-[8px] font-black text-white">
-                    NOW · {boardNowLabel}
-                  </div>
-                </div>
+                />
               )}
 
               {filteredTechnicians.map((tech) => (
@@ -579,7 +598,9 @@ export function TechnicianTracksPanel({
                     technicianId={tech.uuid}
                     onDropJob={onDropJob}
                     focusJobUuid={focusJobUuid}
+                    focusAssignmentId={focusAssignmentId}
                     focusPulse={focusPulse}
+                    onEditActivity={onEditActivity}
                     currentHour={boardUsesLiveNow ? boardNowHour : null}
                     overtimeCount={tech.overtime.length}
                     onOpenOvertime={() => onOpenOvertime(tech.uuid)}

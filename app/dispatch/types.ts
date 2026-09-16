@@ -24,14 +24,40 @@ export type Segment = {
   notes?: string;
   workOrderUuid?: string;
   assignmentId?: string;
+  timeEntryId?: string;
+  sourceStartAt?: string;
+  sourceEndAt?: string | null;
   actual?: boolean;
   openActual?: boolean;
   activityType?: string;
   billable?: boolean;
+  billingRate?: number | null;
+  payRate?: number | null;
   plannedStart?: number;
   plannedEnd?: number;
   overrun?: boolean;
   secondaryLane?: boolean;
+};
+
+
+export type ActivityEditModal = {
+  kind: "planned" | "actual";
+  technicianUuid: string;
+  technicianName: string;
+  jobUuid: string;
+  jobId: string;
+  jobTitle: string;
+  assignmentId?: string;
+  timeEntryId?: string;
+  startDate: string;
+  startTime: string;
+  endDate: string;
+  endTime: string;
+  activityType: string;
+  billable: boolean;
+  billingRate: number | null;
+  payRate: number | null;
+  correctionReason: string;
 };
 
 export type ScheduleItem = {

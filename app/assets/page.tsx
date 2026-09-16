@@ -1,4 +1,5 @@
 "use client";
+import { FieldOpsSidebar } from "@/components/fieldops-sidebar";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -71,8 +72,7 @@ const navigation = [
   { label: "Field Team", icon: Users, href: "/field-team" },
   { label: "Assets", icon: Boxes, active: true, href: "/assets" },
   { label: "Inventory", icon: Package, href: "/inventory" },
-  { label: "Billing", icon: ReceiptText, href: "/billing" },
-  { label: "Reports", icon: BarChart3, href: "/reports" },
+  { label: "Accounts", icon: ReceiptText, href: "/accounts" },
   { label: "Settings", icon: Settings, href: "/settings" },
 ];
 
@@ -645,19 +645,7 @@ export default function AssetsPage() {
     <main className="min-h-screen bg-background text-foreground">
       <ActionNotice notice={actionNotice} onClose={() => setActionNotice(null)} />
       <div className="grid min-h-screen grid-cols-[236px_1fr]">
-        <aside className="border-r border-border bg-card">
-          <CompanyBrand className="border-b border-border px-5 py-4" nameClassName="text-lg font-black" compact />
-          <nav className="space-y-1 p-3">
-            {navigation.map((item) => {
-              const Icon = item.icon;
-              return (
-                <Link key={item.label} href={item.href} className={`flex items-center gap-3 px-3 py-2.5 text-sm font-medium ${item.active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>
-                  <Icon className="h-4 w-4" />{item.label}
-                </Link>
-              );
-            })}
-          </nav>
-        </aside>
+        <FieldOpsSidebar />
 
         <section className="min-w-0">
           <header className="flex h-16 items-center justify-between border-b border-border bg-card px-6">

@@ -560,6 +560,8 @@ function buildTrackForDate(args: {
       description: workOrder.description ?? undefined,
       workOrderUuid: workOrder.id,
       assignmentId: assignment.id,
+      sourceStartAt: start.toISOString(),
+      sourceEndAt: end.toISOString(),
       actual: false,
       plannedStart: dateToDecimalHour(start),
       plannedEnd: dateToDecimalHour(end),
@@ -642,8 +644,8 @@ function buildTrackForDate(args: {
       id: workOrder.work_order_number,
       title: workOrder.title,
       time: isOpen
-        ? `${formatLocalTime(rawStart)}â€“NOW`
-        : `${formatLocalTime(rawStart)}â€“${formatLocalTime(normalEnd)}`,
+        ? `${formatLocalTime(rawStart)}–NOW`
+        : `${formatLocalTime(rawStart)}–${formatLocalTime(normalEnd)}`,
       status: mapTimeEntryActivity(entry.activity_type),
       labelSide: track.length % 2 === 0 ? "top" : "bottom",
       customer: customer?.name,
@@ -656,10 +658,15 @@ function buildTrackForDate(args: {
       description: workOrder.description ?? undefined,
       workOrderUuid: workOrder.id,
       assignmentId: entry.assignment_id ?? matchingAssignment?.id,
+      timeEntryId: entry.id,
+      sourceStartAt: entry.started_at,
+      sourceEndAt: entry.ended_at,
       actual: true,
       openActual: isOpen,
       activityType: entry.activity_type,
       billable: entry.billable,
+      billingRate: entry.billing_rate,
+      payRate: entry.pay_rate,
       plannedStart:
         matchingAssignment?.scheduled_start || workOrder.scheduled_start
           ? dateToDecimalHour(
@@ -747,6 +754,12 @@ function buildTrackForDate(args: {
       (entry) => entry.ended_at === null
     );
 
+    const latestRelatedEntry = [...relatedEntries].sort((a, b) => {
+      const aEnd = a.ended_at ? new Date(a.ended_at).getTime() : Number.MAX_SAFE_INTEGER;
+      const bEnd = b.ended_at ? new Date(b.ended_at).getTime() : Number.MAX_SAFE_INTEGER;
+      return bEnd - aEnd;
+    })[0];
+
     const clippedStartHour = dateToDecimalHour(clippedStart);
     const clippedEndHour =
       clippedEnd.getTime() === window.end.getTime()
@@ -773,10 +786,15 @@ function buildTrackForDate(args: {
       description: workOrder.description ?? undefined,
       workOrderUuid: workOrder.id,
       assignmentId: assignment.id,
+      timeEntryId: latestRelatedEntry?.id,
+      sourceStartAt: latestRelatedEntry?.started_at,
+      sourceEndAt: latestRelatedEntry?.ended_at ?? null,
       actual: true,
       openActual: hasOpenEntry,
-      activityType: "overrun",
-      billable: true,
+      activityType: latestRelatedEntry?.activity_type ?? "work",
+      billable: latestRelatedEntry?.billable ?? true,
+      billingRate: latestRelatedEntry?.billing_rate ?? null,
+      payRate: latestRelatedEntry?.pay_rate ?? null,
       plannedEnd: dateToDecimalHour(plannedEnd),
       overrun: true,
     });
@@ -1082,7 +1100,7 @@ function computeDispatchFit(args: {
     new Set(
       conflictingSegments.map(
         (segment) =>
-          `${formatClock(segment.start)}â€“${formatClock(segment.end)}`
+          `${formatClock(segment.start)}–${formatClock(segment.end)}`
       )
     )
   );

@@ -1,4 +1,5 @@
 "use client";
+import { FieldOpsSidebar } from "@/components/fieldops-sidebar";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -23,6 +24,7 @@ import { CompanyBrand } from "@/components/company-brand";
 import { createClient } from "@/lib/supabase/client";
 
 import type {
+  ActivityEditModal,
   AssignmentModal,
   DbAssignment,
   DbCustomer,
@@ -35,6 +37,7 @@ import type {
   DbWorkOrder,
   DragJobPayload,
   NewWorkOrderForm,
+  Segment,
   Technician,
   WaitingJob,
 } from "./types";
@@ -64,6 +67,7 @@ import { OvertimeModal } from "./components/modals/overtime-modal";
 import { TechnicianScheduleModal } from "./components/modals/technician-schedule-modal";
 import { NewWorkOrderModal } from "./components/modals/new-work-order-modal";
 import { DispatchAssignmentModal } from "./components/modals/assignment-modal";
+import { ActivityEditModal as DispatchActivityEditModal } from "./components/modals/activity-edit-modal";
 
 const navigation = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
@@ -73,8 +77,7 @@ const navigation = [
   { label: "Field Team", icon: Users, href: "/field-team" },
   { label: "Assets", icon: Boxes, href: "/assets" },
   { label: "Inventory", icon: Package, href: "/inventory" },
-  { label: "Billing", icon: ReceiptText, href: "/billing" },
-  { label: "Reports", icon: BarChart3, href: "/reports" },
+  { label: "Accounts", icon: ReceiptText, href: "/accounts" },
   { label: "Settings", icon: Settings, href: "/settings" },
 ];
 
@@ -87,6 +90,7 @@ export default function Home() {
   const [selectedJobUuid, setSelectedJobUuid] = useState<string | null>(null);
   const [focusJobUuid, setFocusJobUuid] = useState<string | null>(null);
   const [focusTechnicianUuid, setFocusTechnicianUuid] = useState<string | null>(null);
+  const [focusAssignmentId, setFocusAssignmentId] = useState<string | null>(null);
   const [focusPulse, setFocusPulse] = useState(false);
   const [overtimeTechnicianUuid, setOvertimeTechnicianUuid] = useState<string | null>(null);
   const [selectedTechUuid, setSelectedTechUuid] = useState<string | null>(null);
@@ -97,6 +101,9 @@ export default function Home() {
   const [assignmentModal, setAssignmentModal] = useState<AssignmentModal | null>(null);
   const [assignmentError, setAssignmentError] = useState<string | null>(null);
   const [savingAssignment, setSavingAssignment] = useState(false);
+  const [activityModal, setActivityModal] = useState<ActivityEditModal | null>(null);
+  const [activityError, setActivityError] = useState<string | null>(null);
+  const [savingActivity, setSavingActivity] = useState(false);
   const [boardCurrentTime, setBoardCurrentTime] = useState<Date | null>(null);
   const [customerOptions, setCustomerOptions] = useState<DbCustomer[]>([]);
   const [siteOptions, setSiteOptions] = useState<DbSite[]>([]);
@@ -324,6 +331,7 @@ export default function Home() {
         jobUuid?: string;
         date?: string | null;
         technicianUuid?: string | null;
+        assignmentId?: string | null;
         requestedAt?: number;
       } | null = null;
 
@@ -350,6 +358,10 @@ export default function Home() {
         params.get("tech") ||
         storedRequest?.technicianUuid ||
         null;
+      const requestedAssignment =
+        params.get("assignment") ||
+        storedRequest?.assignmentId ||
+        null;
 
       if (requestedJob) {
         setFocusJobUuid(requestedJob);
@@ -360,6 +372,10 @@ export default function Home() {
 
       if (requestedTech) {
         setFocusTechnicianUuid(requestedTech);
+      }
+
+      if (requestedAssignment) {
+        setFocusAssignmentId(requestedAssignment);
       }
 
       setSelectedDate(
@@ -499,17 +515,23 @@ export default function Home() {
 
       attempt += 1;
 
-      const exactSelector = focusTechnicianUuid
-        ? `[data-technician-row="${focusTechnicianUuid}"] [data-fieldops-work-order="${focusJobUuid}"]`
+      const assignmentSelector = focusAssignmentId
+        ? `[data-fieldops-assignment="${focusAssignmentId}"][data-fieldops-segment-kind="planned"]`
         : `[data-fieldops-work-order="${focusJobUuid}"]`;
+
+      const exactSelector = focusTechnicianUuid
+        ? `[data-technician-row="${focusTechnicianUuid}"] ${assignmentSelector}`
+        : assignmentSelector;
 
       // First try the exact technician + exact job.
       let element = document.querySelector(exactSelector);
 
-      // If technician ownership changed between Work Orders load and
-      // Dispatch load, still locate the SAME work order on its current row.
-      if (!(element instanceof HTMLElement)) {
+      // An assignment id means the caller asked for one exact dispatch.
+      // Never fall through and highlight another assignment for the same job.
+      if (!(element instanceof HTMLElement) && !focusAssignmentId) {
         element = document.querySelector(
+          `[data-fieldops-work-order="${focusJobUuid}"][data-fieldops-segment-kind="planned"]`
+        ) ?? document.querySelector(
           `[data-fieldops-work-order="${focusJobUuid}"]`
         );
       }
@@ -576,6 +598,7 @@ export default function Home() {
       const matchingOvertime = overtimeItems.find(
         (item) =>
           item.workOrderUuid === focusJobUuid &&
+          (!focusAssignmentId || item.assignmentId === focusAssignmentId) &&
           (!focusTechnicianUuid ||
             item.technicianUuid ===
               focusTechnicianUuid)
@@ -622,6 +645,7 @@ export default function Home() {
   }, [
     focusJobUuid,
     focusTechnicianUuid,
+    focusAssignmentId,
     loading,
     allJobs,
     selectedDate,
@@ -636,6 +660,7 @@ export default function Home() {
     setError(null);
     setFocusJobUuid(null);
     setFocusTechnicianUuid(null);
+    setFocusAssignmentId(null);
     setFocusPulse(false);
     setSelectedJobUuid(null);
     setOvertimeTechnicianUuid(null);
@@ -644,6 +669,7 @@ export default function Home() {
       const url = new URL(window.location.href);
       url.searchParams.delete("focus");
       url.searchParams.delete("tech");
+      url.searchParams.delete("assignment");
       url.searchParams.set("date", nextDate);
       window.history.replaceState(
         null,
@@ -924,34 +950,144 @@ export default function Home() {
     });
   }
 
+  function openActivityEditor(segment: Segment, technicianUuid: string) {
+    if (!segment.workOrderUuid) return;
+
+    const job = allJobs.find((item) => item.uuid === segment.workOrderUuid);
+    const tech = techniciansWithFit.find((item) => item.uuid === technicianUuid);
+    if (!job || !tech) return;
+
+    const sourceStart = segment.sourceStartAt
+      ? new Date(segment.sourceStartAt)
+      : dateAtHour(selectedDate, segment.start);
+    const sourceEnd = segment.sourceEndAt
+      ? new Date(segment.sourceEndAt)
+      : segment.openActual
+      ? null
+      : dateAtHour(selectedDate, segment.end);
+
+    setActivityError(null);
+    setActivityModal({
+      kind: segment.actual ? "actual" : "planned",
+      technicianUuid,
+      technicianName: tech.name,
+      jobUuid: job.uuid,
+      jobId: job.id,
+      jobTitle: job.title,
+      assignmentId: segment.assignmentId,
+      timeEntryId: segment.timeEntryId,
+      startDate: formatDateInput(sourceStart),
+      startTime: timeInputFromDate(sourceStart),
+      endDate: sourceEnd ? formatDateInput(sourceEnd) : "",
+      endTime: sourceEnd ? timeInputFromDate(sourceEnd) : "",
+      activityType: segment.activityType || "work",
+      billable: segment.billable ?? true,
+      billingRate: segment.billingRate ?? null,
+      payRate: segment.payRate ?? null,
+      correctionReason: "",
+    });
+  }
+
+  async function saveActivityEdit() {
+    if (!activityModal) return;
+
+    setActivityError(null);
+
+    const startHour = timeInputToDecimalHour(activityModal.startTime);
+    if (!activityModal.startDate || startHour === null) {
+      setActivityError("Enter a valid start date and time.");
+      return;
+    }
+
+    const start = dateAtHour(activityModal.startDate, startHour);
+    let end: Date | null = null;
+
+    if (activityModal.endTime || activityModal.endDate) {
+      const endHour = timeInputToDecimalHour(activityModal.endTime);
+      if (!activityModal.endDate || endHour === null) {
+        setActivityError("Enter both an end date and end time, or leave both blank for an active actual entry.");
+        return;
+      }
+      end = dateAtHour(activityModal.endDate, endHour);
+      if (end <= start) {
+        setActivityError("End time must be later than start time.");
+        return;
+      }
+    }
+
+    if (activityModal.kind === "planned" && !end) {
+      setActivityError("A scheduled dispatch must have an end date and time.");
+      return;
+    }
+
+    setSavingActivity(true);
+
+    if (activityModal.kind === "planned") {
+      if (!activityModal.assignmentId || !end) {
+        setActivityError("This dispatch assignment could not be identified.");
+        setSavingActivity(false);
+        return;
+      }
+
+      const { error: updateError } = await supabase.rpc(
+        "fieldops_reassign_work_order",
+        {
+          p_work_order_id: activityModal.jobUuid,
+          p_from_assignment_id: activityModal.assignmentId,
+          p_to_technician_id: activityModal.technicianUuid,
+          p_scheduled_start: start.toISOString(),
+          p_scheduled_end: end.toISOString(),
+        }
+      );
+
+      if (updateError) {
+        setActivityError(updateError.message);
+        setSavingActivity(false);
+        return;
+      }
+    } else {
+      if (!activityModal.timeEntryId) {
+        setActivityError("The actual time entry behind this line could not be identified.");
+        setSavingActivity(false);
+        return;
+      }
+
+      if (activityModal.correctionReason.trim().length < 5) {
+        setActivityError("Enter a correction reason of at least 5 characters.");
+        setSavingActivity(false);
+        return;
+      }
+
+      const { error: correctionError } = await supabase.rpc(
+        "fieldops_correct_time_entry",
+        {
+          p_time_entry_id: activityModal.timeEntryId,
+          p_started_at: start.toISOString(),
+          p_ended_at: end ? end.toISOString() : null,
+          p_activity_type: activityModal.activityType,
+          p_billable: activityModal.billable,
+          p_billing_rate: activityModal.billingRate,
+          p_pay_rate: activityModal.payRate,
+          p_reason: activityModal.correctionReason.trim(),
+        }
+      );
+
+      if (correctionError) {
+        setActivityError(correctionError.message);
+        setSavingActivity(false);
+        return;
+      }
+    }
+
+    setSavingActivity(false);
+    setActivityModal(null);
+    setActivityError(null);
+    await loadBoard();
+  }
+
   return (
     <main className="h-screen overflow-hidden bg-background text-foreground">
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-border bg-sidebar xl:flex">
-        <CompanyBrand className="h-[72px] border-b border-border px-4" />
-
-        <nav className="flex-1 space-y-1 p-3">
-          {navigation.map((item) => {
-            const Icon = item.icon;
-            const className = `flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
-              item.active
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-sidebar-hover hover:text-foreground"
-            }`;
-
-            return item.href ? (
-              <Link key={item.label} href={item.href} className={className}>
-                <Icon className="h-[18px] w-[18px]" />
-                {item.label}
-              </Link>
-            ) : (
-              <button key={item.label} type="button" className={className}>
-                <Icon className="h-[18px] w-[18px]" />
-                {item.label}
-              </button>
-            );
-          })}
-        </nav>
-      </aside>
+      <FieldOpsSidebar fixed />
 
       <div className="flex h-screen min-h-0 flex-col xl:ml-64">
         <header className="sticky top-0 z-30 flex h-[72px] shrink-0 items-center border-b border-border bg-topbar px-4 backdrop-blur-xl lg:px-6">
@@ -1057,7 +1193,9 @@ export default function Home() {
                   boardNowRatio={boardNowRatio}
                   boardNowLabel={boardNowLabel}
                   focusJobUuid={focusJobUuid}
+                  focusAssignmentId={focusAssignmentId}
                   focusPulse={focusPulse}
+                  onEditActivity={openActivityEditor}
                   boardUsesLiveNow={boardUsesLiveNow}
                   boardNowHour={boardNowHour}
                   onDropJob={handleDropJob}
@@ -1107,6 +1245,15 @@ export default function Home() {
         setNewWorkOrderForm={setNewWorkOrderForm}
         setNewWorkOrderOpen={setNewWorkOrderOpen}
         onCreate={() => void createWorkOrder()}
+      />
+
+      <DispatchActivityEditModal
+        activityModal={activityModal}
+        setActivityModal={setActivityModal}
+        activityError={activityError}
+        setActivityError={setActivityError}
+        savingActivity={savingActivity}
+        onSave={() => void saveActivityEdit()}
       />
 
       <DispatchAssignmentModal

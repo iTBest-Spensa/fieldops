@@ -185,7 +185,9 @@ export function SingleLineTimeline({
   technicianId,
   onDropJob,
   focusJobUuid,
+  focusAssignmentId,
   focusPulse,
+  onEditActivity,
   currentHour,
   overtimeCount,
   onOpenOvertime,
@@ -199,7 +201,9 @@ export function SingleLineTimeline({
     dropHour: number
   ) => void;
   focusJobUuid: string | null;
+  focusAssignmentId: string | null;
   focusPulse: boolean;
+  onEditActivity: (segment: Segment, technicianId: string) => void;
   currentHour: number | null;
   overtimeCount: number;
   onOpenOvertime: () => void;
@@ -478,7 +482,10 @@ export function SingleLineTimeline({
             segment.status !== "complete" &&
             !segment.overrun;
           const focused =
-            segment.workOrderUuid === focusJobUuid;
+            segment.workOrderUuid === focusJobUuid &&
+            (focusAssignmentId
+              ? segment.assignmentId === focusAssignmentId && segment.actual !== true
+              : true);
 
           const labelTop = segment.secondaryLane
             ? lineTop + (compact ? 7 : 10)
@@ -507,6 +514,9 @@ export function SingleLineTimeline({
                   ? segment.workOrderUuid
                   : undefined
               }
+              data-fieldops-assignment={segment.assignmentId || undefined}
+              data-fieldops-segment-kind={segment.actual ? "actual" : "planned"}
+              data-fieldops-time-entry={segment.timeEntryId || undefined}
               draggable={canMoveJob}
               title={
                 canMoveJob
@@ -578,6 +588,14 @@ export function SingleLineTimeline({
                 })
               }
               onMouseLeave={() => setHint(null)}
+              onDoubleClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setHint(null);
+                if (segment.workOrderUuid) {
+                  onEditActivity(segment, technicianId);
+                }
+              }}
             >
               {focused && focusPulse && (
                 <span className="pointer-events-none absolute left-1/2 top-0 z-50 -translate-x-1/2 whitespace-nowrap border border-primary bg-background px-1.5 py-0.5 text-[8px] font-black text-primary animate-pulse">
