@@ -296,28 +296,6 @@ export function TechnicianTracksPanel({
               ))}
             </select>
 
-            <select
-              value={teamFilter}
-              onChange={(event) =>
-                setTeamFilter(event.target.value)
-              }
-              className="h-9 w-[130px] shrink-0 border border-border bg-background px-2 text-xs font-semibold outline-none"
-              aria-label="Filter technicians by team"
-            >
-              <option value="all">
-                All teams
-              </option>
-
-              {teamOptions.map((team) => (
-                <option
-                  key={team}
-                  value={team}
-                >
-                  {team}
-                </option>
-              ))}
-            </select>
-
             <div className="flex h-9 shrink-0 overflow-hidden border border-border bg-background">
               <button
                 type="button"
@@ -415,7 +393,29 @@ export function TechnicianTracksPanel({
               gridTemplateColumns: `${technicianColumnWidth}px minmax(0,1fr)`,
             }}
           >
-            <div className="sticky left-0 z-[95] border-r border-border bg-background/95" />
+            <div className="sticky left-0 z-[95] flex items-center border-r border-border bg-background/95 px-2">
+  <select
+    value={teamFilter}
+    onChange={(event) =>
+      setTeamFilter(event.target.value)
+    }
+    className="h-7 w-full border border-border bg-card px-2 text-[10px] font-semibold text-foreground outline-none"
+    aria-label="Filter technicians by team"
+  >
+    <option value="all">
+      All teams
+    </option>
+
+    {teamOptions.map((team) => (
+      <option
+        key={team}
+        value={team}
+      >
+        {team}
+      </option>
+    ))}
+  </select>
+</div>
             <div className="relative">
               {boardShowsNow && (
                 <div
@@ -423,7 +423,7 @@ export function TechnicianTracksPanel({
                   style={{ left: `${boardNowRatio * 100}%` }}
                 >
                   <span
-                    className={`absolute top-0 whitespace-nowrap rounded-sm bg-rose-500 px-1.5 py-0.5 text-[8px] font-black text-white ${
+                    className={`absolute top-5 whitespace-nowrap rounded-sm bg-rose-500 px-1.5 py-0.5 text-[8px] font-black text-white ${
                       boardNowRatio > 0.92
                         ? "-translate-x-full"
                         : boardNowRatio < 0.08

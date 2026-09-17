@@ -1,12 +1,52 @@
-import type { ActivityStatus, NewWorkOrderForm } from "./types";
+import type { ActivityStatus, ArrivalWindowKey, NewWorkOrderForm } from "./types";
 
-export const BOARD_START_HOUR = 6;
-export const BOARD_END_HOUR = 22;
+export const BOARD_START_HOUR = 8;
+export const BOARD_END_HOUR = 16;
 export const BOARD_TOTAL_HOURS = BOARD_END_HOUR - BOARD_START_HOUR;
 export const boardHours = Array.from(
   { length: BOARD_TOTAL_HOURS + 1 },
   (_, index) => BOARD_START_HOUR + index
 );
+
+export const arrivalWindows: Array<{
+  key: ArrivalWindowKey;
+  label: string;
+  shortLabel: string;
+  startHour: number;
+  endHour: number;
+}> = [
+  { key: "8-9", label: "8:00 AM – 9:00 AM", shortLabel: "8–9", startHour: 8, endHour: 9 },
+  { key: "9-11", label: "9:00 AM – 11:00 AM", shortLabel: "9–11", startHour: 9, endHour: 11 },
+  { key: "11-1", label: "11:00 AM – 1:00 PM", shortLabel: "11–1", startHour: 11, endHour: 13 },
+  { key: "1-3", label: "1:00 PM – 3:00 PM", shortLabel: "1–3", startHour: 13, endHour: 15 },
+];
+
+export const estimatedDurationOptionsMinutes = Array.from(
+  { length: 96 },
+  (_, index) => (index + 1) * 15
+);
+
+export function getArrivalWindow(key: ArrivalWindowKey | "" | null | undefined) {
+  return arrivalWindows.find((window) => window.key === key) ?? null;
+}
+
+export function arrivalWindowForHour(hour: number) {
+  return (
+    arrivalWindows.find((window) => hour >= window.startHour && hour < window.endHour) ??
+    (hour < arrivalWindows[0].startHour
+      ? arrivalWindows[0]
+      : arrivalWindows[arrivalWindows.length - 1])
+  );
+}
+
+export function durationMinutesLabel(minutes: number) {
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  const hourLabel = `${hours} hr${hours === 1 ? "" : "s"}`;
+  return remainder ? `${hourLabel} ${remainder} min` : hourLabel;
+}
+
 
 export const statusColors: Record<ActivityStatus, { line: string; text: string; label: string }> = {
   complete: {
@@ -72,7 +112,7 @@ export const emptyNewWorkOrderForm: NewWorkOrderForm = {
   priority: "normal",
   source: "office",
   scheduleDate: "",
-  scheduleTime: "",
+  arrivalWindowKey: "",
   estimatedDurationMinutes: "60",
   requiredSkills: "",
   serviceArea: "",

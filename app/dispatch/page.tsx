@@ -46,7 +46,9 @@ import {
   BOARD_END_HOUR,
   BOARD_START_HOUR,
   BOARD_TOTAL_HOURS,
+  arrivalWindowForHour,
   emptyNewWorkOrderForm,
+  getArrivalWindow,
 } from "./constants";
 
 import {
@@ -55,7 +57,6 @@ import {
   formatDateInput,
   getWeekWindow,
   rangesOverlap,
-  snapHour,
   timeInputFromDate,
   timeInputToDecimalHour,
 } from "./utils";
@@ -120,6 +121,49 @@ export default function Home() {
     allJobs.find((job) => job.uuid === selectedJobUuid) ??
     waitingJobs[0] ??
     null;
+
+  const jobTypeDefaults = useMemo(() => {
+    const byType = new Map<
+      string,
+      {
+        name: string;
+        durations: Map<number, { count: number; firstSeen: number }>;
+      }
+    >();
+
+    // Work orders are loaded newest-first. The most commonly used duration
+    // becomes the Job Type default; if there is a tie, the newest value wins.
+    allJobs.forEach((job, index) => {
+      const name = job.jobType?.trim();
+      if (!name) return;
+
+      const key = name.toLocaleLowerCase();
+      const minutes = Math.max(
+        15,
+        Math.round(job.estimatedDurationMinutes / 15) * 15
+      );
+      const entry = byType.get(key) ?? {
+        name,
+        durations: new Map<number, { count: number; firstSeen: number }>(),
+      };
+      const current = entry.durations.get(minutes);
+
+      entry.durations.set(minutes, {
+        count: (current?.count ?? 0) + 1,
+        firstSeen: current?.firstSeen ?? index,
+      });
+      byType.set(key, entry);
+    });
+
+    return Array.from(byType.values())
+      .map((entry) => {
+        const durationMinutes = Array.from(entry.durations.entries())
+          .sort((a, b) => b[1].count - a[1].count || a[1].firstSeen - b[1].firstSeen)[0]?.[0] ?? 60;
+
+        return { name: entry.name, durationMinutes };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [allJobs]);
   const techniciansWithFit = useMemo(() => {
     if (!selectedJobUuid) {
       return technicians.map((tech) => ({ ...tech, confidence: 0, rank: 0 }));
@@ -161,15 +205,21 @@ export default function Home() {
   const boardShowsNow =
     boardCurrentTime !== null &&
     selectedDate === formatDateInput(boardCurrentTime) &&
-    boardNowHour !== null &&
-    boardNowHour >= BOARD_START_HOUR &&
-    boardNowHour <= BOARD_END_HOUR;
+    boardNowHour !== null;
 
+  // Keep the NOW marker visible on Today even just before/after the 8–4 board.
+  // Outside board hours it pins to the nearest edge while keeping the real clock label.
   const boardUsesLiveNow = boardShowsNow;
   const boardNowRatio =
     boardNowHour === null
       ? 0
-      : (boardNowHour - BOARD_START_HOUR) / BOARD_TOTAL_HOURS;
+      : Math.min(
+          1,
+          Math.max(
+            0,
+            (boardNowHour - BOARD_START_HOUR) / BOARD_TOTAL_HOURS
+          )
+        );
   const boardNowLabel = boardCurrentTime
     ? boardCurrentTime.toLocaleTimeString([], {
         hour: "numeric",
@@ -231,7 +281,8 @@ export default function Home() {
         .select(
           "id,work_order_number,title,description,priority,status,scheduled_start,scheduled_end,requested_at,customer_id,site_id,job_type,estimated_duration_minutes,required_skills,service_area"
         )
-        .neq("status", "cancelled"),
+        .neq("status", "cancelled")
+        .order("requested_at", { ascending: false }),
       supabase
         .from("work_order_assignments")
         .select("id,work_order_id,technician_id,assignment_role,assignment_status,scheduled_start,scheduled_end,accepted_at,released_at,pending_activity_type")
@@ -718,17 +769,17 @@ export default function Home() {
     }
 
     const duration = Number(newWorkOrderForm.estimatedDurationMinutes);
-    if (!Number.isFinite(duration) || duration < 15) {
-      setNewWorkOrderError("Estimated duration must be at least 15 minutes.");
+    if (!Number.isFinite(duration) || duration < 15 || duration % 15 !== 0) {
+      setNewWorkOrderError("Estimated job time must use 15-minute intervals.");
       return;
     }
 
     const hasScheduleDate = Boolean(newWorkOrderForm.scheduleDate);
-    const hasScheduleTime = Boolean(newWorkOrderForm.scheduleTime);
+    const hasArrivalWindow = Boolean(newWorkOrderForm.arrivalWindowKey);
 
-    if (hasScheduleDate !== hasScheduleTime) {
+    if (hasScheduleDate !== hasArrivalWindow) {
       setNewWorkOrderError(
-        "Enter both a schedule date and start time, or leave both blank."
+        "Choose both a schedule date and one of the four arrival windows, or leave both blank."
       );
       return;
     }
@@ -736,14 +787,17 @@ export default function Home() {
     let scheduledStart: string | null = null;
     let scheduledEnd: string | null = null;
 
-    if (hasScheduleDate && hasScheduleTime) {
-      const [hours, minutes] = newWorkOrderForm.scheduleTime
-        .split(":")
-        .map(Number);
+    if (hasScheduleDate && hasArrivalWindow) {
+      const arrivalWindow = getArrivalWindow(newWorkOrderForm.arrivalWindowKey);
+
+      if (!arrivalWindow) {
+        setNewWorkOrderError("Choose a valid arrival window.");
+        return;
+      }
 
       const start = dateAtHour(
         newWorkOrderForm.scheduleDate,
-        hours + minutes / 60
+        arrivalWindow.startHour
       );
       const end = new Date(start.getTime() + duration * 60 * 1000);
 
@@ -830,21 +884,24 @@ export default function Home() {
     setAssignmentError(null);
     setError(null);
 
-    const startHour = timeInputToDecimalHour(assignmentModal.startTime);
-    const endHour = timeInputToDecimalHour(assignmentModal.endTime);
-
     if (!assignmentModal.date) {
       setAssignmentError("Choose the assignment date.");
       return;
     }
 
-    if (startHour === null || endHour === null) {
-      setAssignmentError("Enter a valid start and end time.");
+    const arrivalWindow = getArrivalWindow(assignmentModal.arrivalWindowKey);
+    if (!arrivalWindow) {
+      setAssignmentError("Choose one of the four arrival windows.");
       return;
     }
 
-    if (endHour <= startHour) {
-      setAssignmentError("End time must be later than start time.");
+    const scheduledDurationMinutes = assignmentModal.scheduledDurationMinutes;
+    if (
+      !Number.isFinite(scheduledDurationMinutes) ||
+      scheduledDurationMinutes < 15 ||
+      scheduledDurationMinutes % 15 !== 0
+    ) {
+      setAssignmentError("Scheduled duration must use 15-minute intervals.");
       return;
     }
 
@@ -857,8 +914,10 @@ export default function Home() {
       return;
     }
 
-    const start = dateAtHour(assignmentModal.date, startHour);
-    const end = dateAtHour(assignmentModal.date, endHour);
+    const start = dateAtHour(assignmentModal.date, arrivalWindow.startHour);
+    const end = new Date(
+      start.getTime() + scheduledDurationMinutes * 60 * 1000
+    );
 
     setSavingAssignment(true);
 
@@ -906,9 +965,13 @@ export default function Home() {
 
     setAssignmentError(null);
 
-    const snappedHour = snapHour(dropHour, 15);
-    const durationHours = Math.max(job.estimatedDurationMinutes, 15) / 60;
-    const endHour = snappedHour + durationHours;
+    const arrivalWindow = arrivalWindowForHour(dropHour);
+    const startHour = arrivalWindow.startHour;
+    const scheduledDurationMinutes = Math.max(
+      15,
+      Math.round(job.estimatedDurationMinutes / 15) * 15
+    );
+    const endHour = startHour + scheduledDurationMinutes / 60;
 
     const hasConflict = tech.track.some((segment) => {
       if (payload.assignmentId && segment.assignmentId === payload.assignmentId) {
@@ -918,7 +981,7 @@ export default function Home() {
       return (
         segment.status !== "available" &&
         segment.id !== "OPEN" &&
-        rangesOverlap(snappedHour, endHour, segment.start, segment.end)
+        rangesOverlap(startHour, endHour, segment.start, segment.end)
       );
     });
 
@@ -929,9 +992,6 @@ export default function Home() {
     } else {
       setAssignmentError(null);
     }
-
-    const start = dateAtHour(selectedDate, snappedHour);
-    const end = dateAtHour(selectedDate, endHour);
 
     const modalTech = {
       ...tech,
@@ -945,8 +1005,8 @@ export default function Home() {
       sourceTechnicianUuid: payload.sourceTechnicianUuid,
       assignmentId: payload.assignmentId,
       date: selectedDate,
-      startTime: timeInputFromDate(start),
-      endTime: timeInputFromDate(end),
+      arrivalWindowKey: arrivalWindow.key,
+      scheduledDurationMinutes,
     });
   }
 
@@ -1090,65 +1150,88 @@ export default function Home() {
       <FieldOpsSidebar fixed />
 
       <div className="flex h-screen min-h-0 flex-col xl:ml-64">
-        <header className="sticky top-0 z-30 flex h-[72px] shrink-0 items-center border-b border-border bg-topbar px-4 backdrop-blur-xl lg:px-6">
-          <div className="flex-1" />
+        <header className="sticky top-0 z-30 shrink-0 border-b border-border bg-topbar px-4 py-3 backdrop-blur-xl lg:px-6">
 
-          <div className="ml-auto flex items-center gap-2">
-            <FieldOpsThemeToggle />
-            <button
-              type="button"
-              className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground"
-            >
-              <Bell className="h-4 w-4" />
-              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-card" />
-            </button>
-          </div>
-        </header>
+  <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+
+    {/* TITLE */}
+    <div className="shrink-0">
+      <div className="text-sm font-semibold text-primary">
+        Dispatch
+      </div>
+
+      <h1 className="mt-1 whitespace-nowrap text-2xl font-bold">
+        Technician Track Board
+      </h1>
+    </div>
+
+    {/* HEADER CONTROLS */}
+    <div className="min-w-0 flex-1 overflow-x-auto">
+      <div className="flex w-max items-center gap-2 xl:ml-auto">
+
+        <label className="relative flex h-10 shrink-0 items-center gap-2 rounded-xl border border-border bg-card px-3 text-sm font-semibold">
+          <CalendarDays className="h-4 w-4" />
+
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(event) =>
+              changeDispatchDate(event.target.value)
+            }
+            className="bg-transparent outline-none"
+          />
+        </label>
+
+        {quickDates.map((date) => (
+          <button
+            key={date.value}
+            type="button"
+            onClick={() =>
+              changeDispatchDate(date.value)
+            }
+            className={`h-10 shrink-0 border px-3 text-xs font-bold ${
+              selectedDate === date.value
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border bg-card text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {date.label}
+          </button>
+        ))}
+
+        <button
+          type="button"
+          onClick={openNewWorkOrder}
+          className="flex h-10 shrink-0 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground"
+        >
+          <Plus className="h-4 w-4" />
+          New Work Order
+        </button>
+
+        {/* Keep your intentional gap */}
+        <div className="ml-2 flex shrink-0 items-center gap-2">
+
+          <FieldOpsThemeToggle />
+
+          <button
+            type="button"
+            className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground"
+          >
+            <Bell className="h-4 w-4" />
+
+            <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-card" />
+          </button>
+
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+</header>
 
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-4 lg:px-6">
-          <section className="mb-3 flex shrink-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="text-sm font-semibold text-primary">Dispatch</div>
-              <h1 className="mt-1 text-2xl font-bold">Technician Track Board</h1>
-              
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <label className="relative flex h-10 items-center gap-2 rounded-xl border border-border bg-card px-3 text-sm font-semibold">
-                <CalendarDays className="h-4 w-4" />
-                <input
-                  type="date"
-                  value={selectedDate}
-                  onChange={(event) => changeDispatchDate(event.target.value)}
-                  className="bg-transparent outline-none"
-                />
-              </label>
-
-              {quickDates.map((date) => (
-                <button
-                  key={date.value}
-                  type="button"
-                  onClick={() => changeDispatchDate(date.value)}
-                  className={`h-10 border px-3 text-xs font-bold ${
-                    selectedDate === date.value
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border bg-card text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {date.label}
-                </button>
-              ))}
-
-              <button
-                type="button"
-                onClick={openNewWorkOrder}
-                className="flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground"
-              >
-                <Plus className="h-4 w-4" />
-                New Work Order
-              </button>
-            </div>
-          </section>
 
           {authRequired ? (
             <section className="rounded-2xl border border-border bg-card p-8 text-center">
@@ -1175,14 +1258,22 @@ export default function Home() {
                 <WaitingWorkPanel
                   loading={loading}
                   waitingJobs={waitingJobs}
+                  technicians={techniciansWithFit}
                   selectedJob={selectedJob}
                   focusJobUuid={focusJobUuid}
                   focusPulse={focusPulse}
                   canSelfClaim={currentUserIsTechnician}
                   canDragAssign={currentUserCanDispatch}
                   claimingJobUuid={claimingJobUuid}
+                  boardShowsNow={boardShowsNow}
+                  boardNowHour={boardNowHour}
                   onSelectJob={setSelectedJobUuid}
                   onClaimJob={(job) => void claimWaitingWork(job)}
+                  onViewSchedule={(technicianUuid) => {
+                    setSelectedTechUuid(technicianUuid);
+                    setScheduleView("today");
+                  }}
+                  onOpenOvertime={setOvertimeTechnicianUuid}
                 />
 
                 <TechnicianTracksPanel
@@ -1243,6 +1334,7 @@ export default function Home() {
         siteOptions={siteOptions}
         newWorkOrderForm={newWorkOrderForm}
         setNewWorkOrderForm={setNewWorkOrderForm}
+        jobTypeDefaults={jobTypeDefaults}
         setNewWorkOrderOpen={setNewWorkOrderOpen}
         onCreate={() => void createWorkOrder()}
       />

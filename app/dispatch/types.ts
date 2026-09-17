@@ -1,5 +1,7 @@
 // Dispatch-specific domain/data types.
 
+export type ArrivalWindowKey = "8-9" | "9-11" | "11-1" | "1-3";
+
 export type ActivityStatus =
   | "complete"
   | "travelling"
@@ -81,6 +83,7 @@ export type WaitingJob = {
   scheduledStart: string | null;
   scheduledEnd: string | null;
   estimatedDurationMinutes: number;
+  jobType: string | null;
   requiredSkills: string[];
   serviceArea: string | null;
 };
@@ -146,8 +149,8 @@ export type AssignmentModal = {
   sourceTechnicianUuid?: string;
   assignmentId?: string;
   date: string;
-  startTime: string;
-  endTime: string;
+  arrivalWindowKey: ArrivalWindowKey;
+  scheduledDurationMinutes: number;
 };
 
 export type DbWorkOrder = {
@@ -230,7 +233,7 @@ export type NewWorkOrderForm = {
   priority: string;
   source: string;
   scheduleDate: string;
-  scheduleTime: string;
+  arrivalWindowKey: ArrivalWindowKey | "";
   estimatedDurationMinutes: string;
   requiredSkills: string;
   serviceArea: string;

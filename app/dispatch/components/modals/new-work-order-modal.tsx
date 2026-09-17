@@ -3,6 +3,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import { X } from "lucide-react";
 import type { DbCustomer, DbSite, NewWorkOrderForm } from "../../types";
+import { arrivalWindows, durationMinutesLabel, estimatedDurationOptionsMinutes } from "../../constants";
 
 export function NewWorkOrderModal({
   open,
@@ -12,6 +13,7 @@ export function NewWorkOrderModal({
   siteOptions,
   newWorkOrderForm,
   setNewWorkOrderForm,
+  jobTypeDefaults,
   setNewWorkOrderOpen,
   onCreate,
 }: {
@@ -22,6 +24,7 @@ export function NewWorkOrderModal({
   siteOptions: DbSite[];
   newWorkOrderForm: NewWorkOrderForm;
   setNewWorkOrderForm: Dispatch<SetStateAction<NewWorkOrderForm>>;
+  jobTypeDefaults: Array<{ name: string; durationMinutes: number }>;
   setNewWorkOrderOpen: Dispatch<SetStateAction<boolean>>;
   onCreate: () => void;
 }) {
@@ -194,16 +197,37 @@ export function NewWorkOrderModal({
                       <label>
                         <span className="mb-1.5 block text-xs font-bold">Job type</span>
                         <input
+                          list="dispatch-job-types"
                           value={newWorkOrderForm.jobType}
-                          onChange={(event) =>
+                          onChange={(event) => {
+                            const jobType = event.target.value;
+                            const matched = jobTypeDefaults.find(
+                              (option) =>
+                                option.name.toLocaleLowerCase() ===
+                                jobType.trim().toLocaleLowerCase()
+                            );
+
                             setNewWorkOrderForm((current) => ({
                               ...current,
-                              jobType: event.target.value,
-                            }))
-                          }
+                              jobType,
+                              estimatedDurationMinutes: matched
+                                ? String(matched.durationMinutes)
+                                : current.estimatedDurationMinutes,
+                            }));
+                          }}
                           placeholder="e.g. Desktop Support"
                           className="h-11 w-full border border-border bg-card px-3 text-sm outline-none focus:border-primary"
                         />
+                        <datalist id="dispatch-job-types">
+                          {jobTypeDefaults.map((option) => (
+                            <option key={option.name} value={option.name}>
+                              {durationMinutesLabel(option.durationMinutes)}
+                            </option>
+                          ))}
+                        </datalist>
+                        <span className="mt-1 block text-[11px] text-muted-foreground">
+                          Existing Job Types automatically prefill their usual saved duration.
+                        </span>
                       </label>
 
                       <label>
@@ -221,7 +245,7 @@ export function NewWorkOrderModal({
                         />
                       </label>
 
-                      <div className="md:col-span-2 grid gap-3 border border-border bg-muted/20 p-4 md:grid-cols-[1fr_1fr_180px]">
+                      <div className="md:col-span-2 grid gap-3 border border-border bg-muted/20 p-4 md:grid-cols-[1fr_1.25fr_180px]">
                         <label>
                           <span className="mb-1.5 block text-xs font-bold">
                             Schedule date
@@ -241,30 +265,32 @@ export function NewWorkOrderModal({
 
                         <label>
                           <span className="mb-1.5 block text-xs font-bold">
-                            Start time
+                            Arrival window
                           </span>
-                          <input
-                            type="time"
-                            step={900}
-                            value={newWorkOrderForm.scheduleTime}
+                          <select
+                            value={newWorkOrderForm.arrivalWindowKey}
                             onChange={(event) =>
                               setNewWorkOrderForm((current) => ({
                                 ...current,
-                                scheduleTime: event.target.value,
+                                arrivalWindowKey: event.target.value as NewWorkOrderForm["arrivalWindowKey"],
                               }))
                             }
                             className="h-11 w-full border border-border bg-card px-3 text-sm outline-none focus:border-primary"
-                          />
+                          >
+                            <option value="">Unscheduled</option>
+                            {arrivalWindows.map((window) => (
+                              <option key={window.key} value={window.key}>
+                                {window.label}
+                              </option>
+                            ))}
+                          </select>
                         </label>
 
                         <label>
                           <span className="mb-1.5 block text-xs font-bold">
-                            Est. minutes
+                            Est. job time
                           </span>
-                          <input
-                            type="number"
-                            min={15}
-                            step={15}
+                          <select
                             value={newWorkOrderForm.estimatedDurationMinutes}
                             onChange={(event) =>
                               setNewWorkOrderForm((current) => ({
@@ -273,11 +299,17 @@ export function NewWorkOrderModal({
                               }))
                             }
                             className="h-11 w-full border border-border bg-card px-3 text-sm outline-none focus:border-primary"
-                          />
+                          >
+                            {estimatedDurationOptionsMinutes.map((minutes) => (
+                              <option key={minutes} value={minutes}>
+                                {durationMinutesLabel(minutes)}
+                              </option>
+                            ))}
+                          </select>
                         </label>
 
                         <div className="md:col-span-3 text-[11px] text-muted-foreground">
-                          Leave both schedule fields blank for an unscheduled job.
+                          Arrival windows are fixed at 8–9, 9–11, 11–1 and 1–3. Leave the date and arrival window blank for an unscheduled job.
                         </div>
                       </div>
 

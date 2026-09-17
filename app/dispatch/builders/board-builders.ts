@@ -101,6 +101,7 @@ export function buildLiveBoard(args: {
       scheduledStart: workOrder.scheduled_start,
       scheduledEnd: workOrder.scheduled_end,
       estimatedDurationMinutes: workOrder.estimated_duration_minutes ?? 60,
+      jobType: workOrder.job_type,
       requiredSkills: workOrder.required_skills ?? [],
       serviceArea: workOrder.service_area ?? site?.city ?? null,
     };
